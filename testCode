@@ -1,4 +1,0 @@
-=TRANSPOSE(UNIQUE(Sheet1!A:A))
-=UNIQUE(FILTER(Sheet1!C:C, Sheet1!B:B="X Angle"))
-=INDEX(Sheet1!$D:$D, MATCH(1, (Sheet1!$A:$A=B$1)*(Sheet1!$B:$B="X Angle")*(Sheet1!$C:$C=$A2), 0))
-=INDEX(Sheet1!$D:$D, MATCH(1, (Sheet1!$A:$A=B$1)*(Sheet1!$B:$B="Y Angle")*(Sheet1!$C:$C=$A22), 0))
