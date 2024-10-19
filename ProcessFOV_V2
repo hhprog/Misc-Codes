@@ -2,133 +2,123 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from datetime import datetime
 
-def plotFOV(filename="FoV.csv", use_normalized_data=False, use_desired_order=False, desired_order=None):
+def plotFOV(config=None):
     """
-    This function processes a Field of View (FoV) dataset from optical simulations (e.g., TracePro/Zemax),
-    calculates the Full Width at Half Maximum (FWHM), and plots the data based on FoV sweep types (xFoV or yFoV).
-    The input data should be in a CSV format with the following columns:
+    Processes and plots a Field of View (FoV) dataset from optical simulations, calculating FWHM and plotting intensity data.
     
-    Run ID     | Type  | Angle  | Intensity
-    -----------|-------|--------|-----------
-    abc        | xFOV  | 10     | 100
-    abc        | xFOV  | 20     | 150
-    abc        | yFOV  | 30     | 200
-    ...
-
     Args:
-    filename (str): The path to the CSV file containing the data. Defaults to 'FoV.csv'.
-    use_normalized_data (bool): Set to True to normalize intensity data, otherwise False. Defaults to False.
-    use_desired_order (bool): Set to True to filter and plot only a specific order of Run IDs. Defaults to False.
-    desired_order (list of strings, optional): A list of Run IDs to plot in the specified order. Defaults to None (all Run IDs will be plotted).
-    
+    config (dict): Configuration parameters including:
+        - 'filename' (str): Name of the CSV file to read data from (default: "FoV.csv").
+        - 'use_normalized_data' (bool): Whether to normalize intensity data (default: False).
+        - 'use_desired_order' (bool): Whether to use a custom order for Run IDs (default: False).
+        - 'desired_order' (list): Custom order of Run IDs if 'use_desired_order' is True.
+        - 'custom_filename' (str): Custom name for the output file (default: None).
+
     Returns:
-    None. The function will plot graphs for each FoV type and print FWHM values for each run. To run as default, plotFOV()
+    pd.DataFrame: FWHM results as a DataFrame.
+    
+    Example usage:
+    1. Default settings:
+       fwhm_results = plotFOV()
 
-    Example 1:
-    # Plot normalized data for all available Run IDs (without filtering).
-    plotFOV("FoV.csv", use_normalized_data=True, use_desired_order=False)
+    2. Custom settings:
+       custom_config = {
+           'filename': 'FoV.csv',
+           'use_normalized_data': True,
+           'use_desired_order': False,
+           'desired_order': ['RunID_1', 'RunID_2'],
+           'custom_filename': ''
+       }
+       fwhm_results = plotFOV(config=custom_config)
 
-    Example 2:
-    # Plot normalized data and filter only the specified Run IDs ('Skewed Gaussian', 'Centered Gaussian').
-    plotFOV("FoV.csv", use_normalized_data=True, use_desired_order=True, desired_order=['Skewed Gaussian', 'Centered Gaussian'])
-
+    Note:
+    If 'filename' does not point to a valid CSV file, a FileNotFoundError will be raised. Ensure the file exists and is correctly named.
     """
+    if config is None:
+        config = {
+            "filename": "FoV.csv",
+            "use_normalized_data": False,
+            "use_desired_order": False,
+            "desired_order": None,
+            "custom_filename": None
+        }
+
     # Load the dataset
-    df = pd.read_csv(filename, sep=',')
+    if not os.path.isfile(config['filename']):
+        raise FileNotFoundError(f"The specified file '{config['filename']}' does not exist.")
 
-    # If no desired_order is specified and use_desired_order is True, use all Run IDs in default order
-    if use_desired_order and desired_order is None:
-        desired_order = df['Run ID'].unique().tolist()
-
+    df = pd.read_csv(config['filename'], sep=',')
     FOV_list = df['Type'].unique()
     fwhm_results = []
+
+    date_str = datetime.now().strftime('%y%m%d')
 
     # Define line styles and color palette
     line_styles = ['-', '--', '-.', ':', (0, (3, 5, 1, 5)), (0, (1, 1)), (0, (5, 10)), (0, (3, 1, 1, 1)), (0, (1, 5))]
     high_contrast_colors = ['black', 'red', 'blue', 'green', 'orange', 'purple', 'cyan', 'magenta', 'brown', 'pink']
 
-    # Calculate FWHM
-    def calculate_fwhm(angle, intensity):
-        max_intensity = np.max(intensity)
-        half_max = max_intensity / 2
-        indices_above_half = np.where(intensity >= half_max)[0]
-        
-        if len(indices_above_half) > 1:
-            left_index = indices_above_half[0]
-            right_index = indices_above_half[-1]
-            fwhm_min_angle = angle[left_index]
-            fwhm_max_angle = angle[right_index]
-            fwhm_bandwidth = fwhm_max_angle - fwhm_min_angle
-            return fwhm_min_angle, fwhm_max_angle, fwhm_bandwidth, half_max
-        return None, None, None, None
-
-    # Loop through each FoV
     for FOV in FOV_list:
         fov_data = df[df['Type'] == FOV]
-
-        # Initialize a new figure for each FoV
         plt.figure(figsize=(10, 5))
-
-        # Get unique Run IDs
         run_ids = fov_data['Run ID'].unique()
-
-        if use_desired_order:
-            # Filter run IDs based on desired order
-            ordered_run_ids = [run_id for run_id in desired_order if run_id in run_ids]
-        else:
-            ordered_run_ids = run_ids  # Use all Run IDs if filtering is disabled
-
+        
+        ordered_run_ids = run_ids if not config['use_desired_order'] else [run_id for run_id in config['desired_order'] if run_id in run_ids]
+    
         for i, rID in enumerate(ordered_run_ids):
             run_data = fov_data[fov_data['Run ID'] == rID]
-            
-            # Get the angles and intensities for this run
             angles = run_data['Angle'].values
             intensities = run_data['Intensity'].values
             
-            # Normalize intensities if needed
-            if use_normalized_data:
+            if config['use_normalized_data']:
                 max_intensity = np.max(intensities)
                 if max_intensity > 0:
-                    intensities = intensities / max_intensity  # Normalize to maximum
-            
+                    intensities /= max_intensity
+    
             # Calculate FWHM
             fwhm_min_angle, fwhm_max_angle, fwhm_bandwidth, half_max = calculate_fwhm(angles, intensities)
-
             fwhm_results.append([FOV, rID, fwhm_min_angle, fwhm_max_angle, fwhm_bandwidth])
             
-            # Plotting the intensity data for each rID with different line styles and colors
-            plt.plot(angles, intensities, linestyle=line_styles[i % len(line_styles)],
-                     color=high_contrast_colors[i % len(high_contrast_colors)], label=f'{rID}')
-            
-            # Draw the half-max line without adding it to the legend
-            plt.axhline(y=half_max, color='grey', linestyle=':', label='_nolegend_')
+            # Plotting the intensity data for each rID with high contrast lines
+            color = high_contrast_colors[i % len(high_contrast_colors)]  # Cycle through colors
+            linestyle = line_styles[i % len(line_styles)]  # Cycle through line styles
+            plt.plot(angles, intensities, label=f'{rID}', color=color, linestyle=linestyle)
+    
+            # Draw the half-max line with a label
+            plt.axhline(y=half_max, color='grey', linestyle=':', label='__nolegend__')
 
-        # Customize the plot for each FoV
+        # Customize plot
         plt.title(f'{FOV}')
         plt.xlabel('Angle (\u00b0)')
-        plt.ylabel('Normalized PS Counts' if use_normalized_data else 'PS Counts')
-        
-        # Set x and y limits
-        plt.xlim(-90, 90)  # X-axis limits
-        plt.ylim(0)  # Y-axis limits based on intensity
-
-        # Set x-ticks in increments of 10 degrees
+        plt.ylabel('Normalized PS Counts' if config['use_normalized_data'] else 'PS Counts')
+        plt.xlim(-90, 90)
+        plt.ylim(0)
         plt.xticks(np.arange(-90, 91, 10))
-
-        plt.legend()
+        plt.legend(loc='upper right')  # Position legend in the top right corner
         plt.grid(True)
-        plt.show()
 
-    # Output the FWHM table
-    print("Field of View, Run ID, FWHM (Left Bound), FWHM (Right Bound), FWHM")
-    for result in fwhm_results:
-        print(f"{result[0]}, {result[1]}, {result[2]:.2f}, {result[3]:.2f}, {result[4]:.2f}")
+        # Save figure
+        # Save figure
+        output_filename = f"{date_str}_{config['custom_filename'] + '_' if config['custom_filename'] else ''}{FOV}.jpg"
+        plt.savefig(output_filename)
+        plt.close()
 
-# Correct typos using pandas in case when there are consistent error in the rawdata labellings
-# Example: suppose there are typos in 'Type' like 'FoV1', 'FoV2', that should be 'FoV 1', 'FoV 2'
-# typo_corrections = {
-#     'FoV1': 'FoV 1',
-#     'FoV2': 'FoV 2'
-# }
-# df['Type'] = df['Type'].replace(typo_corrections)
+    fwhm_df = pd.DataFrame(fwhm_results, columns=["Field of View", "Run ID", "FWHM (Left Bound)", "FWHM (Right Bound)", "FWHM"])
+    return fwhm_df
+
+def calculate_fwhm(angle, intensity):
+    max_intensity = np.max(intensity)
+    half_max = max_intensity / 2
+    indices_above_half = np.where(intensity >= half_max)[0]
+    
+    if len(indices_above_half) > 1:
+        left_index = indices_above_half[0]
+        right_index = indices_above_half[-1]
+        fwhm_min_angle = angle[left_index]
+        fwhm_max_angle = angle[right_index]
+        fwhm_bandwidth = fwhm_max_angle - fwhm_min_angle
+        return fwhm_min_angle, fwhm_max_angle, fwhm_bandwidth, half_max
+    return None, None, None, None
+
+
