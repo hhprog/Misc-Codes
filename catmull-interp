@@ -1,0 +1,83 @@
+# Caltmull Rom Spline (Excel's intepolation function, modified for interpolation at specified points from a less dense x-axis to a more dense x-axis)
+#https://github.com/vmichals/python-algos/blob/master/catmull_rom_spline.py
+#!/usr/bin/env python
+#-*- coding: utf-8 -*-
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+def catmull_rom_one_point(x, v0, v1, v2, v3):
+    """
+    Computes interpolated y-coord for given x-coord using Catmull-Rom.
+
+    Args:
+        x: The x-coord for which the y-coord is needed.
+        v0, v1, v2, v3: Support points to ensure smooth transition.
+    """
+    c1 = v1
+    c2 = -.5 * v0 + .5 * v2
+    c3 = v0 + -2.5 * v1 + 2. * v2 - .5 * v3
+    c4 = -.5 * v0 + 1.5 * v1 + -1.5 * v2 + .5 * v3
+    return (((c4 * x + c3) * x + c2) * x + c1)
+
+def catmull_rom(p_x, p_y, p_x_dense):
+    """
+    Computes Catmull-Rom spline for given support points and a denser x-axis.
+
+    Args:
+        p_x: Array of x-coordinates (sparse).
+        p_y: Array of y-coordinates corresponding to sparse x-coordinates.
+        p_x_dense: The denser array of x-coordinates where interpolation is needed.
+    """
+    n_points = len(p_x)
+    assert n_points >= 4, "Need at least four points for Catmull-Rom spline."
+
+    # Create array for the interpolated y-values
+    y_intpol = np.empty_like(p_x_dense)
+
+    # Loop over segments (n-1 segments for n points)
+    for i in range(n_points - 1):
+        # Determine the x values in p_x_dense that fall within the current segment
+        mask = (p_x_dense >= p_x[i]) & (p_x_dense < p_x[i+1])
+        x_segment = (p_x_dense[mask] - p_x[i]) / (p_x[i+1] - p_x[i])  # Normalize x in segment
+
+        if i == 0:
+            y_intpol[mask] = [
+                catmull_rom_one_point(x, p_y[0] - (p_y[1] - p_y[0]), p_y[0], p_y[1], p_y[2])
+                for x in x_segment
+            ]
+        elif i == n_points - 2:
+            y_intpol[mask] = [
+                catmull_rom_one_point(x, p_y[i-1], p_y[i], p_y[i+1], p_y[i+1] + (p_y[i+1] - p_y[i]))
+                for x in x_segment
+            ]
+        else:
+            y_intpol[mask] = [
+                catmull_rom_one_point(x, p_y[i-1], p_y[i], p_y[i+1], p_y[i+2])
+                for x in x_segment
+            ]
+
+    # Handle the case where p_x_dense includes the last point exactly
+    if p_x_dense[-1] == p_x[-1]:
+        y_intpol[-1] = p_y[-1]
+
+    return y_intpol
+
+if __name__ == '__main__':
+    # Generate sparse support points
+    p_x = np.arange(0, 11, dtype='float32')  # Sparse x-axis (0, 1, 2, ..., 10)
+    p_y = np.random.rand(len(p_x)) * 3. - 1.5  # Random y-values corresponding to p_x
+
+    # Generate denser x-axis
+    p_x_dense = np.arange(0, 10.1,.2, dtype='float32')  # Dense x-axis (0, 0.1, 0.2, ..., 10)
+
+    # Perform Catmull-Rom spline interpolation on the dense x-axis
+    y_intpol = catmull_rom(p_x, p_y, p_x_dense)
+
+    # Plot the original points and the interpolated points
+    plt.figure()
+    plt.scatter(p_x, p_y, label="Original Points", color='red')
+    plt.plot(p_x_dense, y_intpol, label="Interpolated Spline", color='blue')
+    plt.title("Catmull-Rom Spline Interpolation")
+    plt.legend()
+    plt.show()
