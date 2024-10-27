@@ -1,0 +1,120 @@
+import xlwings as xw
+import pandas as pd
+import numpy as np
+from matplotlib import pyplot as plt
+
+def catmull_rom_one_point(x: float, v0: float, v1: float, v2: float, v3: float) -> float:
+    c1 = v1
+    c2 = -.5 * v0 + .5 * v2
+    c3 = v0 - 2.5 * v1 + 2.0 * v2 - 0.5 * v3
+    c4 = -.5 * v0 + 1.5 * v1 - 1.5 * v2 + 0.5 * v3
+    return (((c4 * x + c3) * x + c2) * x + c1)
+
+def catmull_rom(p_x: np.ndarray, p_y: np.ndarray, p_x_dense: np.ndarray) -> np.ndarray:
+    assert len(p_x) >= 4, "Need at least four points for Catmull-Rom spline."
+    y_intpol = np.empty_like(p_x_dense)
+    for i in range(len(p_x) - 1):
+        mask = (p_x_dense >= p_x[i]) & (p_x_dense < p_x[i + 1])
+        x_segment = (p_x_dense[mask] - p_x[i]) / (p_x[i + 1] - p_x[i])
+
+        if i == 0:
+            y_intpol[mask] = [
+                catmull_rom_one_point(x, p_y[0] - (p_y[1] - p_y[0]), p_y[0], p_y[1], p_y[2]) 
+                for x in x_segment
+            ]
+        elif i == len(p_x) - 2:
+            y_intpol[mask] = [
+                catmull_rom_one_point(x, p_y[i - 1], p_y[i], p_y[i + 1], p_y[i + 1] + (p_y[i + 1] - p_y[i])) 
+                for x in x_segment
+            ]
+        else:
+            y_intpol[mask] = [
+                catmull_rom_one_point(x, p_y[i - 1], p_y[i], p_y[i + 1], p_y[i + 2]) 
+                for x in x_segment
+            ]
+
+    if p_x_dense[-1] == p_x[-1]:
+        y_intpol[-1] = p_y[-1]
+
+    return y_intpol
+
+def main():
+    """
+    Instructions:
+    1. Open Excel and select data including columns for PAR1_LABEL, PAR2_LABEL, and Output.
+       Ensure the first column is labeled 'Par1', followed by Par2 values and corresponding Output values.
+    2. Run this script to perform interpolation using the Catmull-Rom spline method.
+    3. The code will:
+       - Load selected data from Excel.
+       - Melt the data for processing.
+       - Interpolate Output values to finer parameter values in one dimension (Par2).
+       - Output results to a new Excel file named 'interpolated_output.xlsx'.
+       - Plot Output curves for specified Par1 values.
+
+    Data Requirement:
+    - Data in Pivot Table format (PAR1_LABEL vs PAR2_LABEL with Output values).
+    - The first column contains PAR1_LABEL info (numeric/string).
+    - The first row contains PAR2_LABEL info (numeric/string).
+    - Subsequent columns should be labeled with PAR2_LABEL values and contain corresponding Output percentages.
+
+    Additional Note:
+    To specify the interpolation axis, modify new_par2_values via np.arange().
+    To specify the PAR1_LABEL values to be plotted, change selected_par1_values.
+    """
+    # Dictionary to store parameter labels and their units
+    param_info = {
+        'PAR1_LABEL': {'label': 'Par1', 'unit': 'test'},  # Define Par1 and its unit
+        'PAR2_LABEL': {'label': 'AOI', 'unit': 'test'}   # Define Par2 and its unit
+    }
+    # Accessing labels and units from the dictionary
+    PAR1_LABEL = param_info['PAR1_LABEL']['label']
+    PAR2_LABEL = param_info['PAR2_LABEL']['label']
+    
+    data = xw.load(index=False)
+
+    df_melted = data.melt(id_vars=[PAR1_LABEL], var_name=PAR2_LABEL, value_name='Output')
+    df_melted[PAR2_LABEL] = df_melted[PAR2_LABEL].str.extract('(\d+)').astype(float)
+    df_melted[PAR1_LABEL] = df_melted[PAR1_LABEL].str.extract('(\d+)').astype(float)
+
+    new_par2_values = np.arange(0, 51, 2.5)
+    interpolated_rows = []
+
+    for par1 in df_melted[PAR1_LABEL].unique():
+        subset = df_melted[df_melted[PAR1_LABEL] == par1]
+        y_intpol = catmull_rom(subset[PAR2_LABEL].values, subset['Output'].values, new_par2_values)
+
+        interpolated_data = pd.DataFrame({
+            PAR1_LABEL: par1,
+            PAR2_LABEL: new_par2_values,
+            'Output': y_intpol
+        })
+        interpolated_rows.append(interpolated_data)
+
+    df_interpolated = pd.concat(interpolated_rows, ignore_index=True)
+    df_interpolated.pivot(index=PAR1_LABEL, columns=PAR2_LABEL, values='Output').to_excel('interpolated_output.xlsx', sheet_name='Interpolated Par2')
+
+    selected_par1_values = [900, 880]  # To select discrete Par1 values
+
+    plt.figure()
+    colors = plt.colormaps['tab20'](np.linspace(0, 1, len(selected_par1_values)))  # Update here
+    
+    for i, par1 in enumerate(selected_par1_values):
+        subset_interp = df_interpolated[df_interpolated[PAR1_LABEL] == par1]
+        subset_raw = df_melted[df_melted[PAR1_LABEL] == par1]
+        color = colors[i]
+    
+        plt.scatter(subset_raw[PAR2_LABEL], subset_raw['Output'], label=f'Raw {par1} units', marker='o', color=color)
+        plt.scatter(subset_interp[PAR2_LABEL], subset_interp['Output'], label=f'Interpolated {par1} units', marker='x', color=color)
+    
+    plt.xlabel(f'{PAR2_LABEL} ({param_info["PAR2_LABEL"]["unit"]})')
+    plt.ylabel(f'Output ({param_info["PAR1_LABEL"]["unit"]})')
+    
+    title_par1_values = ', '.join(map(str, selected_par1_values))
+    plt.title(f'Output Curves for Selected Values: {title_par1_values}')
+    
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+if __name__ == "__main__":
+    main()
