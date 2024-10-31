@@ -1,0 +1,75 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Creating the DataFrame
+data = {
+    'model': ['Bar'] * 45,
+    'ver': ['abc'] * 15 + ['def'] * 15 + ['ghi'] * 15,
+    'label': ['r'] * 5 + ['g'] * 5 + ['b'] * 5 + ['r'] * 5 + ['g'] * 5 + ['b'] * 5 + ['r'] * 5 + ['g'] * 5 + ['b'] * 5,
+    'xa': [1, 2, 3, 4, 5] * 9,
+    'ya': [20, 40, 60, 80, 100] * 9
+}
+
+df = pd.DataFrame(data)
+
+# Adding noise to 'ya' values (using normal distribution)
+noise = np.random.normal(0, 5, df.shape[0])  # mean 0, standard deviation 5
+df['ya'] = df['ya'] + noise
+
+# Define a dictionary for label multipliers
+multipliers = {'r': 1, 'g': 2, 'b': 3}
+
+# Multiplying 'ya' by the corresponding multiplier based on the 'label'
+df['ya'] = df['ya'] * df['label'].map(multipliers)
+
+# Grouping by 'label' and 'xa', applying min, mean, max, and std on 'ya'
+agg_stats = df.groupby(['label', 'xa']).agg({'ya': ['min', 'mean', 'max', 'std']}).reset_index()
+
+# Flattening the MultiIndex columns
+agg_stats.columns = ['label', 'xa', 'min', 'mean', 'max', 'std']
+
+# Plotting the datasets
+labels = agg_stats['label'].unique()
+
+plt.figure(figsize=(12, 8))
+
+# Define colors for each label
+color_dict = {'r': 'red', 'g': 'green', 'b': 'blue'}
+
+# Plotting min, mean, max, and std for each label
+for label in labels:
+    avg_subset = agg_stats[agg_stats['label'] == label]
+    
+    # Plot mean
+    plt.plot(avg_subset['xa'], avg_subset['mean'], marker='x', label=f'Mean - {label}', 
+             linewidth=2, color=color_dict[label])  
+    
+    # Plot max
+    plt.plot(avg_subset['xa'], avg_subset['max'], marker='o', linestyle='--', 
+             label=f'Max - {label}', color=color_dict[label])  
+    
+    # Plot min
+    plt.plot(avg_subset['xa'], avg_subset['min'], marker='s', linestyle=':', 
+             label=f'Min - {label}', color=color_dict[label])  
+    
+    # Fill between for std dev
+    plt.fill_between(avg_subset['xa'], 
+                     avg_subset['mean'] - avg_subset['std'], 
+                     avg_subset['mean'] + avg_subset['std'], 
+                     alpha=0.2, color=color_dict[label], 
+                     label=f'Std Dev - {label} Area')  
+
+# Adding titles and labels
+plt.title('Comparison of xa vs. ya with Min, Mean, Max, and Std Dev for Different Labels')
+plt.xlabel('xa')
+plt.ylabel('ya values')
+plt.legend(loc='upper left', bbox_to_anchor=(1, 1), title='Legend')
+
+# Display the grid and plot
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# Display the aggregated statistics
+print(agg_stats)
