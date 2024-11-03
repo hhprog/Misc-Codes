@@ -1,0 +1,67 @@
+import pandas as pd
+import numpy as np
+
+# Assuming the same file_paths dictionary for file locations
+file_paths = {
+    ('aaa', '01', 'r'): '/path/to/aaa_01_r.csv',
+    ('aaa', '01', 'g'): '/path/to/aaa_01_g.csv',
+    ('aaa', '01', 'b'): '/path/to/aaa_01_b.csv',
+    # Add other model/unit/sensor combinations
+}
+
+# Step 1: Create a function that calculates the AUC multiplier based on model, unit, and sensor_type
+def calculate_multiplier(model, unit, sensor_type, wavelength_range=(600, 1000)):
+    """
+    Calculate the multiplier by integrating over the wavelength range for each model, unit, and sensor.
+    """
+    # Get the file path based on the (model, unit, sensor_type)
+    file_key = (model, unit, sensor_type)
+    if file_key not in file_paths:
+        raise ValueError(f"No file found for {model}, {unit}, {sensor_type}")
+    
+    # Read the CSV file for this sensor
+    file_path = file_paths[file_key]
+    df = pd.read_csv(file_path)
+    
+    # Set Wavelength as the index and filter for the specified range
+    df.set_index('Wavelength', inplace=True)
+    min_wavelength, max_wavelength = wavelength_range
+    filtered_df = df.loc[min_wavelength:max_wavelength]
+
+    # Calculate the AUC for each AOI column
+    auc = {}
+    for col in filtered_df.columns:  # Assuming AOI columns
+        auc[col] = np.trapz(filtered_df[col], filtered_df.index)
+    
+    # Return the multiplier (choosing AOI = 0 for simplicity)
+    return auc.get('AOI = 0', 1)  # Default to 1 if AOI = 0 is not found
+
+# Step 2: Create a dictionary of multipliers for different models, units, and sensor types
+multipliers = {
+    (model, unit, sensor_type): calculate_multiplier(model, unit, sensor_type)
+    for model, unit, sensor_type in [('aaa', '01', 'r'), ('aaa', '01', 'g'), ('aaa', '01', 'b')]
+    # Add all combinations that you need
+}
+
+# Step 3: Create a function to apply these multipliers to the main data
+def get_multiplier(row):
+    # Return the multiplier from the dictionary based on Model, Unit, and Sensor Type
+    return multipliers.get((row['Model'], row['Unit'], row['Sensor Type']), 1)  # Default to 1 if not found
+
+# Example main DataFrame
+main_data = pd.DataFrame({
+    'Model': ['aaa', 'aaa', 'aaa', 'aaa'],
+    'Unit': ['01', '01', '01', '01'],
+    'Sensor Type': ['r', 'r', 'g', 'b'],
+    'Input': [10, 20, 10, 20],
+    'Output': [80, 90, 80, 90]
+})
+
+# Step 4: Apply the multipliers using .map()
+main_data['Multiplier'] = main_data.apply(get_multiplier, axis=1)
+
+# Step 5: Multiply the Output by the corresponding multiplier
+main_data['Adjusted Output'] = main_data['Output'] * main_data['Multiplier']
+
+# Display the resulting DataFrame
+print(main_data)
