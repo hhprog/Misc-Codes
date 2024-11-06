@@ -1,0 +1,80 @@
+import pandas as pd
+import numpy as np
+
+# Example DataFrame with alphanumeric data
+data = {
+    'unit': ['unit1'] * 5 + ['unit2'] * 5,
+    'type': ['type1', 'type1abc', 'type1', 'type1def', 'type1'] + ['type2xyz', 'type2', 'type2', 'type2', 'type2'],
+    'wavelength': [300, 310, 320, 330, 340] * 2,
+    'sensor': ['sensor1', 'sensor1', 'sensor1x', 'sensor1', 'sensor1',
+               'sensor1', 'sensor1', 'sensor1', 'sensor1b', 'sensor1'],
+    'reading': ['15', '18abc', '20', '22text', '25', '14a', '17', '21b', '23', '26']
+}
+df = pd.DataFrame(data)
+
+# 1. Define a cleaner method using regex for numeric extraction and conversion
+def extract_and_convert_numeric(column):
+    # Extract numeric part using regex and convert to integer
+    return column.str.extract(r'(\d+)').astype(float).astype('Int64')
+
+# 2. Apply extraction to 'type', 'sensor', and 'reading'
+df['type'] = extract_and_convert_numeric(df['type'])
+df['sensor'] = extract_and_convert_numeric(df['sensor'])
+df['reading'] = df['reading'].str.extract(r'(\d+\.?\d*)').astype(float)  # Keep decimal values in 'reading'
+
+# Display cleaned DataFrame
+print(df)
+
+
+
+import pandas as pd
+
+# Example DataFrame format
+data = {
+    'unit': ['unit1'] * 5,
+    'type': ['type1'] * 5,
+    'wavelength': [0, 300, 310, 320, 330],
+    'sensor1': [10, 15, 18, 20, 22],
+    'sensor2': [12, 14, 16, 19, 21],
+    'sensor3': [11, 13, 17, 20, 23],
+    'sensor4': [13, 16, 19, 21, 24]
+}
+df = pd.DataFrame(data)
+
+# 1. Unpivot the DataFrame using pd.melt
+df_melted = pd.melt(df, id_vars=['unit', 'type', 'wavelength'], 
+                    value_vars=['sensor1', 'sensor2', 'sensor3', 'sensor4'],
+                    var_name='sensor', value_name='reading')
+
+# 2. Perform Dark Noise Compensation for each sensor
+# Get dark noise readings (wavelength == 0)
+dark_noise = df_melted[df_melted['wavelength'] == 0].set_index('sensor')['reading'].to_dict()
+
+# 3. Iterate through the sensors to subtract dark noise where wavelength != 0
+for sensor, noise_value in dark_noise.items():
+    df_melted.loc[(df_melted['sensor'] == sensor) & (df_melted['wavelength'] != 0), 'reading'] -= noise_value
+
+# 4. Remove the rows where wavelength == 0 (dark noise rows)
+df_melted = df_melted[df_melted['wavelength'] != 0].reset_index(drop=True)
+
+# Display the final DataFrame after removing dark noise rows
+print(df_melted)
+import pandas as pd
+
+# Example DataFrame format
+data = {
+    'unit': ['unit1'] * 5 + ['unit2'] * 5,
+    'type': ['type1'] * 5 + ['type2'] * 5,
+    'wavelength': [300, 310, 320, 330, 340] * 2,
+    'sensor': ['sensor1', 'sensor1', 'sensor1', 'sensor1', 'sensor1',
+               'sensor1', 'sensor1', 'sensor1', 'sensor1', 'sensor1'],
+    'reading': [15, 18, 20, 22, 25, 14, 17, 21, 23, 26]
+}
+df_melted = pd.DataFrame(data)
+
+# 1. Group the data by 'wavelength' and 'sensor', and then calculate mean, std, min, max, etc.
+# Calculating summary statistics
+summary_stats = df_melted.groupby(['wavelength', 'sensor'])['reading'].agg(['mean', 'std', 'min', 'max']).reset_index()
+
+# Display the summary statistics
+print(summary_stats)
