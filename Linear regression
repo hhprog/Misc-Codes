@@ -1,0 +1,39 @@
+from statistics import linear_regression
+
+def custom_linear_regression(x, y, proportional=False):
+    if proportional:
+        if len(x) == 1:
+            # Single point: directly calculate slope as y / x and set b = 0
+            slope = y[0] / x[0] if x[0] != 0 else 0
+            return slope, 0
+        else:
+            # Least-squares slope calculation (forced through origin)
+            slope = sum(x[i] * y[i] for i in range(len(x))) / sum(x[i]**2 for i in range(len(x)))
+            return slope, 0
+    else:
+        if len(x) == 1:
+            # For a single point in non-proportional mode, return point slope, but intercept is technically undefined
+            return y[0] / x[0] if x[0] != 0 else 0, 0
+
+        # Use the built-in linear_regression
+        slope, intercept = linear_regression(x, y)
+        return slope, intercept
+
+# Example usage
+x = [300]
+y = [10]
+
+# Proportional case (forced through origin)
+m, b = custom_linear_regression(x, y, proportional=True)
+print(f"Proportional: Slope (m): {m}, Intercept (b): {b}")
+
+# Normal case (with intercept, but single point)
+m, b = custom_linear_regression(x, y, proportional=False)
+print(f"Normal: Slope (m): {m}, Intercept (b): {b}")
+
+x_multi = [300, 400]
+y_multi = [10, 20]
+
+# Multiple points example (proportional)
+m, b = custom_linear_regression(x_multi, y_multi, proportional=True)
+print(f"Multi-point Proportional: Slope (m): {m}, Intercept (b): {b}")
