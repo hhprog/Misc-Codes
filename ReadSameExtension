@@ -1,0 +1,27 @@
+import glob
+import pandas as pd
+
+# Define the file path and pattern
+file_pattern = 'path/to/directory/*ABC*.csv'  # Adjust the path to your folder
+
+# Use glob to find files matching the pattern
+files = glob.glob(file_pattern)
+
+# List to store DataFrames
+dataframes = []
+
+# Read each file into a pandas DataFrame
+for file in files:
+    try:
+        df = pd.read_csv(file)
+        print(f"Loaded file: {file}, Shape: {df.shape}")
+        dataframes.append(df)
+    except Exception as e:
+        print(f"Error reading {file}: {e}")
+
+# Combine all DataFrames into one (optional)
+combined_df = pd.concat(dataframes, ignore_index=True)
+print(f"Combined DataFrame shape: {combined_df.shape}")
+
+# Further processing
+# ...
