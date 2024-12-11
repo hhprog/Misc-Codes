@@ -1,0 +1,63 @@
+import xml.etree.ElementTree as ET
+import pandas as pd
+
+# Sample DataFrame with updated data for countries
+data = {
+    "name": ["Liechtenstein", "Singapore"],
+    "value": [2020, 2022],
+    "day": [20, 25],
+    "month": [12, 11],
+    "yweek": [51, 47],
+}
+
+df = pd.DataFrame(data)
+
+# Parse the XML file
+tree = ET.parse('your_file.xml')  # Replace 'your_file.xml' with your XML file path
+root = tree.getroot()
+
+# Iterate over each country in the XML and update values based on the DataFrame
+for country in root.findall('country'):
+    country_name = country.get('name')
+    if country_name in df['name'].values:
+        # Get the row from the DataFrame
+        row = df[df['name'] == country_name].iloc[0]
+        
+        # Access the <year> element
+        year_element = country.find('year')
+        
+        # Update values
+        year_element.find('value').text = str(row['value'])
+        year_element.find('day').text = str(row['day'])
+        year_element.find('month').text = str(row['month']).zfill(2)  # Pad month with leading zero
+        year_element.find('yweek').text = str(row['yweek'])
+
+# Save the updated XML back to a file
+tree.write('updated_file.xml', encoding='utf-8', xml_declaration=True)
+
+print("XML updated and saved!")
+# Dictionary of updates
+updates = {
+    "Liechtenstein": {"value": 2020, "day": 20, "month": 12, "yweek": 51},
+    "Singapore": {"value": 2022, "day": 25, "month": 11, "yweek": 47},
+}
+
+# Iterate over each country in the XML and update values based on the dictionary
+for country in root.findall('country'):
+    country_name = country.get('name')
+    if country_name in updates:
+        update = updates[country_name]
+        
+        # Access the <year> element
+        year_element = country.find('year')
+        
+        # Update values
+        year_element.find('value').text = str(update['value'])
+        year_element.find('day').text = str(update['day'])
+        year_element.find('month').text = str(update['month']).zfill(2)  # Pad month with leading zero
+        year_element.find('yweek').text = str(update['yweek'])
+
+# Save the updated XML back to a file
+tree.write('updated_file.xml', encoding='utf-8', xml_declaration=True)
+
+print("XML updated and saved!")
