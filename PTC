@@ -1,0 +1,92 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+
+# Parameters
+QE = 0.8  # quantum efficiency
+PA = (8 * 10**-4)**2  # pixel area (cm^2)
+FW = 2 * 10**5  # full well (e-)
+RN = 5  # read noise (e-)
+PN = 0.01  # pixel nonuniformity
+k1 = 8.62 * 10**-5  # Boltzmann's constant
+T = 300  # operating temperature (K)
+DFM = 0  # dark current figure of merit
+DN = 0  # dark current FPN
+Eg = 1.1557 - (7.021 * 10**-4 * T**2) / (1108 + T)  # silicon band gap (eV)
+t = 1000  # integration time (sec)
+DARK = t * 2.55 * 10**15 * PA * DFM * T**1.5 * np.exp(-Eg / (2 * k1 * T))  # dark current (e-)
+TL = 1  # transmission of lens
+fn = 30  # f-number of the lens
+mag = 0.001  # magnification of the lens
+lense = TL * (4 * fn**2 * (1 + mag)**2)**-1  # lens equation
+row, column = 20, 20  # number of rows and columns (pixels)
+Num = 1000  # number of exposures
+
+# Random number generator setup
+np.random.seed(None)  # Seed RNG with system time
+C = np.random.randn(row, column)  # random number generator for FPN
+D = np.random.randn(row, column)  # random number generator for dark FPN
+
+# Arrays to store results
+LUX = np.zeros(Num)
+S1, N1, S2, N2 = np.zeros(Num), np.zeros(Num), np.zeros(Num), np.zeros(Num)
+StoN, S2toN2 = np.zeros(Num), np.zeros(Num)
+
+var = []
+
+for k in range(Num):
+    k = 300
+    A = np.random.randn(row, column)  # random number generator for shot noise
+    B = np.random.randn(row, column)  # random number generator for read noise
+    E = np.random.randn(row, column)  # random array for dark shot noise
+
+    LUX[k] = 10**(10 / 3 * np.log10(k + 1) - 4)  # lux light level (lux)
+
+    sig = LUX[k] * 4 * 10**11 * t * QE * PA * lense  # signal (e-)
+    read = RN * B  # read noise (e-)
+    shot = A * np.sqrt(sig)  # shot noise (e-)
+    FPN = C * sig * PN  # FPN (e-)
+    Dshot = E * np.sqrt(DARK)  # dark shot noise (e-)
+    DFPN = D * DN * DARK  # dark FPN (e-)
+    var.append(read)
+    SIG1 = sig + read + shot + FPN + Dshot + DFPN  # total signal for SIG1
+    SIG1 = sig + shot
+    # fig = plt.figure(figsize=(10, 7))
+    # ax = fig.add_subplot(111, projection='3d')
+    # X, Y = np.meshgrid(np.arange(column), np.arange(row))
+    # ax.plot_surface(X, Y, SIG1, cmap='viridis')
+    # ax.set_title('Surface Plot of SIG1 at First Iteration')
+    # ax.set_xlabel('Column Index')
+    # ax.set_ylabel('Row Index')
+    # ax.set_zlabel('Signal Intensity (e-)')
+    # plt.show()
+    
+    
+    SIG2 = sig + read + shot + Dshot + DFPN  # total signal for SIG2
+
+    S1[k] = np.mean(SIG1)  # average signal for SIG1
+    N1[k] = np.mean(np.std(SIG1))  # average noise for SIG1
+
+    # if S1[k] > FW:  # full well limit
+    #     S1[k] = 0
+
+    S2[k] = np.mean(SIG2)  # average signal for SIG2
+    N2[k] = np.mean(np.std(SIG2))  # average noise for SIG2
+
+    # if S2[k] > FW:  # full well limit
+    #     S2[k] = 0
+
+    StoN[k] = S1[k] / N1[k]  # S/N for SIG1
+    S2toN2[k] = S2[k] / N2[k]  # S/N for SIG2
+
+# Lux Transfer Plot
+plt.figure(figsize=(10, 5))
+plt.plot(LUX, StoN, 'k', label='S/N for SIG1')
+plt.plot(LUX, S2toN2, 'k--', label='S/N for SIG2')
+plt.xlabel('Lux Light Level')
+plt.ylabel('Signal-to-Noise Ratio')
+plt.title('Lux Transfer Simulation')
+plt.legend()
+plt.grid(True)
+plt.show()
