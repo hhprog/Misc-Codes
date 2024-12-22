@@ -1,0 +1,80 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Parameters
+PIX = 1000  # number of pixels sampled
+DATA = 100  # number of data points
+edn = 2  # e-/DN
+RN_e = 3  # read noise (e-)
+RN = RN_e / edn  # read noise (DN)
+FW_e = 10**5  # full well (e-)
+FW = FW_e / edn  # full well (DN)
+SCALE = DATA / np.log10(FW)  # full well scale factor
+PN = 0.02  # FPN factor
+FF = 3 * 10**4  # flat field for FPN removal (e-)
+FF_DN = FF / edn  # flat field for FPN removal (DN)
+NFF = 1  # number of flat fields
+Q = FF * NFF  # flat fielding quality factor
+
+# Random number generator setup
+np.random.seed(None)  # Seed RNG with system time
+C = np.random.randn(PIX)  # random number generator for FPN
+
+# Arrays to store results
+SIG1 = np.zeros((PIX, DATA))
+SIG2 = np.zeros((PIX, DATA))
+CAL = np.zeros((PIX, DATA))
+
+for i in range(DATA):
+    sig = 10**(i / SCALE)  # signal step (DN)
+    A = np.random.randn(PIX, DATA)  # random number generator
+    B = np.random.randn(PIX, DATA)  # random number generator
+    D = np.random.randn(PIX, DATA)  # random number generator
+
+    read = RN * A[:, i]  # read noise (DN)
+    shot = (sig / edn)**0.5 * B[:, i]  # shot noise (DN)
+    FPN = sig * PN * C  # FPN
+    SIG1[:, i] = sig + read + shot + FPN  # read + shot + FPN (DN)
+    SIG2[:, i] = sig + read + shot  # read + shot (DN)
+
+    shot_FF = (FF_DN / edn)**0.5 * D[:, i] / NFF**0.5  # flat field shot noise (DN)
+    FPN_FF = FF_DN * PN * C  # flat field FPN (DN)
+    CAL[:, i] = FF_DN + read + shot_FF + FPN_FF  # flat field calibration frame (DN)
+
+# Corrected frame without FPN (DN)
+COR = FF_DN * SIG1 / CAL
+
+# Calculate statistics
+SIGNAL = np.mean(SIG1, axis=0)  # signal (DN)
+NOISE1 = np.std(SIG1, axis=0)  # read + shot + FPN (DN)
+NOISE2 = np.std(SIG2, axis=0)  # read + shot (DN)
+NOISE3 = np.std(COR, axis=0)  # read + shot (DN) corrected
+
+SIGNAL_e = SIGNAL * edn  # signal (e-)
+NOISE1_e = NOISE1 * edn  # read + shot + FPN (e-)
+NOISE2_e = NOISE2 * edn  # read + shot (e-)
+NOISE3_e = NOISE3 * edn  # read + shot (e-) corrected
+
+# PTC Plot (DN)
+plt.figure(figsize=(10, 5))
+plt.plot(SIGNAL, NOISE1, 'k.', label='Read+Shot+FPN')
+plt.plot(SIGNAL, NOISE2, 'k.', label='Read+Shot')
+plt.plot(SIGNAL, NOISE3, 'k.', label='Corrected')
+plt.xlabel('Signal (DN)')
+plt.ylabel('Noise (DN)')
+plt.title('PTC Plot (DN)')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# PTC Plot (e-)
+plt.figure(figsize=(10, 5))
+plt.plot(SIGNAL_e, NOISE1_e, 'k.', label='Read+Shot+FPN')
+plt.plot(SIGNAL_e, NOISE2_e, 'k.', label='Read+Shot')
+plt.plot(SIGNAL_e, NOISE3_e, 'k.', label='Corrected')
+plt.xlabel('Signal (e-)')
+plt.ylabel('Noise (e-)')
+plt.title('PTC Plot (e-)')
+plt.legend()
+plt.grid(True)
+plt.show()
