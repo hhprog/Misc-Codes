@@ -1,0 +1,37 @@
+(define (read-csv file-name)
+  ;; Assuming the CSV is simple and rows are separated by newline, columns by commas
+  (define (parse-line line)
+    (map string->number (string-split line ",")))
+  (define (read-lines file)
+    (define (read-next-line in-port)
+      (let ((line (read-line in-port)))
+        (if line
+            (cons (parse-line line) (read-next-line in-port))
+            '())))
+    (with-input-from-file file
+      (lambda () (read-next-line (current-input-port)))))
+  (read-lines file-name))
+
+(define (group-by-column data column-index)
+  (define (group-recursively remaining-data grouped)
+    (if (null? remaining-data)
+        grouped
+        (let* ((group-num (car (car remaining-data)))
+               (same-group (take-while (lambda (row) (= group-num (car row))) remaining-data))
+               (rest-of-data (drop-while (lambda (row) (= group-num (car row))) remaining-data)))
+          (group-recursively rest-of-data (cons same-group grouped)))))
+  (group-recursively data '()))
+
+(define (process-group group)
+  ;; Define the function that should be applied to each group here
+  (display "Processing group: ")
+  (display group)
+  (newline))
+
+(define (process-csv file-name)
+  (define raw-data (read-csv file-name))
+  (define grouped-data (group-by-column raw-data 0))
+  (for-each process-group grouped-data))
+
+;; Example usage:
+(process-csv "data.csv")
