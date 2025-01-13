@@ -1,3 +1,31 @@
+
+(define (string-to-list str)
+  (define (split-by-comma str start)
+    (define (helper str idx current-word result)
+      (cond
+        ((>= idx (string-length str))  ; Reached end of string
+         (if (not (string-empty? current-word))
+             (reverse (cons current-word result))  ; Add the last word if any
+             (reverse result)))
+        ((char=? (string-ref str idx) #\,)  ; Found a comma
+         (helper str (+ idx 1) "" (cons current-word result)))  ; Add current word and reset
+        (else  ; Otherwise, continue building the word
+         (helper str (+ idx 1) (string-append current-word (string (string-ref str idx))) result)))))
+    (helper str start "" '()))  ; Start with an empty word and empty result list
+
+(define (parse-csv-line line)
+  (string-to-list line))  ; Convert line into a list by splitting by commas
+
+(define (parse-csv data)
+  (define (parse-helper lines result)
+    (if (null? lines)
+        (reverse result)
+        (parse-helper (cdr lines) (cons (parse-csv-line (car lines)) result))))
+  (parse-helper data '()))  ; Parse each line of CSV and accumulate into a list
+
+
+
+
 (define (string-to-list str)
   (define (split-by-comma str start)
     (define (helper str idx current-word result)
