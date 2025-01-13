@@ -1,0 +1,17 @@
+(define (average-score group)
+  (define (average lst) 
+    (/ (apply + (map (lambda (x) (list-ref x 3)) lst)) (length lst)))
+  (average group))
+
+(define (process-groups grouped-data)
+  (for-each (lambda (group)
+              (begin
+                (display "Group: ")
+                (display (car (car group))) ; Display the group number
+                (newline)
+                (display "Average Score: ")
+                (display (average-score group))
+                (newline)))
+            grouped-data))
+
+(process-groups grouped-data)
