@@ -1,3 +1,14 @@
+(define (string-split str)
+  (define (split-helper str start)
+    (cond
+      ((>= start (string-length str)) '())  ; Base case: end of string
+      ((char=? (string-ref str start) #\space)  ; If space, split here
+       (cons "" (split-helper str (+ start 1))))
+      (else
+       (let ((word (take-while (lambda (c) (not (char=? c #\space))) 
+                               (substring str start))))
+         (cons word (split-helper str (+ start (string-length word))))))))
+  (split-helper str 0))
 
 (define (read-lines in-port)
   (let ((line (read-string in-port)))  ; Read the next line
