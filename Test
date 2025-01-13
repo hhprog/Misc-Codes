@@ -1,0 +1,15 @@
+(define (iterate-2d-list data)
+  (do ((i 0 (+ i 1)))  ; Outer loop for rows, starts at 0, increments
+      ((>= i (length data)) '())  ; Stop when we have iterated over all rows
+    (let ((row (list-ref data i)))  ; Get the current row (list)
+      (do ((j 0 (+ j 1)))  ; Inner loop for columns, starts at 0, increments
+          ((>= j (length row)) '())  ; Stop when we have iterated over all columns in the row
+        (let ((element (list-ref row j)))  ; Access the element at (i, j)
+          (display (list i j element))  ; Display the current indices and element
+          (newline)))))
+
+;; Example 2D list
+(define data '((1 2 3) (4 5 6) (7 8 9)))
+
+;; Call the function to iterate and print the elements
+(iterate-2d-list data)
