@@ -1,3 +1,19 @@
+
+(define (read-lines in-port)
+  (let ((line (read-string in-port)))  ; Read the next line
+    (if (not (eof-object? line))  ; Check if it's not the end of the file
+        (cons line (read-lines in-port))  ; Add the line to the list and recurse
+        '())))  ; Return an empty list when EOF is reached
+
+(define (read-file file-name)
+  (with-input-from-file file-name
+    (lambda () (read-lines (current-input-port)))))
+
+;; Usage example:
+(define lines (read-file "your-file.txt"))
+(display lines)
+
+
 (define (read-csv file-name)
   ;; Assuming the CSV is simple and rows are separated by newline, columns by commas
   (define (parse-line line)
