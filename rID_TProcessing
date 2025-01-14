@@ -1,0 +1,71 @@
+(define table_location "C:\\Users\\Dell\\Downloads\\lens_offset_list_z.csv")
+(define p_list (make-vector 5))
+(define lname "dim1")
+
+(define offset_list (open-input-file table_location))
+
+; Read a single line as a string
+(define (read-line port)
+  (let loop ((chars '()) (char (read-char port)))
+    (cond
+      ((eof-object? char) (if (null? chars) char (list->string (reverse chars))))
+      ((char=? char #\newline) (list->string (reverse chars)))
+      (else (loop (cons char chars) (read-char port))))))
+
+; Define string-split function
+(define (string-split str delimiter)
+  (let loop ((chars (string->list str)) ; Convert string to list of characters
+              (current "")
+              (result '()))
+    (cond
+      ((null? chars) ; End of string
+        (reverse (cons current result))) ; Add the last segment to the result
+      ((char=? (car chars) delimiter) ; Found the delimiter
+        (loop (cdr chars) "" (cons current result))) ; Add current to result, reset current
+      (else ; Continue building the current segment
+        (loop (cdr chars) (string-append current (string (car chars))) result)))))
+
+; Skip the header line
+(read-line offset_list)
+
+(define previous-run-id -1) ; Initialize to a valid number
+
+; Placeholder function to simulate lens creation
+(define (create-lens p_list)
+  (print "Creating lens with the following parameters:")
+  (print p_list))
+
+; Placeholder function to simulate ray trace
+(define (perform-ray-trace run-id p_list)
+  (print (string-append "Ray trace initiated for RunID: " (number->string run-id)))
+  ; Simulate ray trace calculations here
+  (print "Performing optical calculations..."))
+
+
+; Main loop to read and process data
+(do ((line (read-line offset_list) (read-line offset_list))) ; Read each line
+  ((eof-object? line) ; Exit when EOF is reached
+    (if (not (= previous-run-id -1)) ; Perform ray trace for the last RunID
+      (perform-ray-trace previous-run-id p_list))
+    (print "Processing completed!"))
+  
+  (let ((fields (string-split line #\tab)))
+    (do ((j 0 (+ j 1))) ; Populate p_list using a nested do loop
+      ((>= j 5)) ; Stop after processing 5 fields
+      (vector-set! p_list j (string->number (list-ref fields j))))
+    
+    ; Detect RunID change
+    (let ((current-run-id (vector-ref p_list 0)))
+      (if (not (= current-run-id previous-run-id))
+        (begin
+          ; Perform ray trace for the previous RunID
+          (if (not (= previous-run-id -1))
+            (perform-ray-trace previous-run-id p_list))
+          
+          (print (string-append "RunID changed to " (number->string current-run-id)))
+          (set! previous-run-id current-run-id))))
+    
+    ; Simulate lens creation for the current line
+    (create-lens p_list))) ; Print the second part
+
+(close-input-port offset_list)
