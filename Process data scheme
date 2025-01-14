@@ -1,0 +1,40 @@
+(define data '((1 2 3 a B) (1 2 4 f B) (2 2 3 a e) (2 5 6 b d)))
+
+; Define the function to process a group of rows with the same run ID
+(define (process-run run-id group)
+  (display "Processing run with ID: ")
+  (display run-id)
+  (newline)
+  (for-each
+   (lambda (row)
+     (display "Processing row: ")
+     (display row)
+     (newline))
+   group)
+  (display "Run completed.\n")
+  (newline))
+
+; Main function using a do loop to group and process the data
+(define (process-all-runs data)
+  (define n (length data)) ; Get the length of the data list
+  (define index 0)         ; Initialize the index for accessing data
+
+  ; Initialize the current group and run-id
+  (define current-group '()) 
+  (define current-run-id (list-ref data 0)) ; Start with the first run ID
+
+  (do ((index 0 (+ index 1)))              ; Loop through the data by index
+      ((>= index n)                        ; Exit condition: index exceeds length of data
+       (if (not (null? current-group))      ; Process the last group if it has any elements
+           (process-run current-run-id current-group)))
+    
+    (let ((current-row (list-ref data index))) ; Access the current row
+      (if (= (list-ref current-row 0) current-run-id) ; If the run ID matches the current run ID
+          (set! current-group (cons current-row current-group)) ; Add to the group
+          (begin
+            (process-run current-run-id current-group) ; Process the current group
+            (set! current-run-id (list-ref current-row 0))    ; Update the run ID
+            (set! current-group (list current-row)))))) ; Start a new group for the new run ID
+
+; Call the function to process all runs
+(process-all-runs data)
