@@ -1,0 +1,7 @@
+    ;; Unite the entities using `do`
+    (do ((i 2 (+ i 1))) ;; Start from 2, increment `i` by 1 each iteration
+      ((> i 7))       ;; Stop when `i` exceeds 7
+      (edit:boolean-unite 
+        (entity 1) 
+        (entity i)))
+		))
