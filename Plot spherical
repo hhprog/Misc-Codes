@@ -1,0 +1,57 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.colors import Normalize
+from matplotlib import cm
+
+# Example XYZ data (replace with your own ray data)
+# Assuming ray_data is an array of shape (N, 3), where N is the number of rays
+ray_data = np.random.randn(1000, 3)  # Replace with your actual ray data
+
+# 1. Convert XYZ to spherical coordinates (r, theta, phi)
+r = np.linalg.norm(ray_data, axis=1)  # radial distance
+theta = np.arccos(ray_data[:, 2] / r)  # polar angle (colatitude)
+phi = np.arctan2(ray_data[:, 1], ray_data[:, 0])  # azimuthal angle (longitude)
+
+# 2. Bin the data
+# Define number of bins for theta (0 to pi) and phi (0 to 2pi)
+n_theta_bins = 30
+n_phi_bins = 60
+
+theta_bins = np.linspace(0, np.pi, n_theta_bins)
+phi_bins = np.linspace(-np.pi, np.pi, n_phi_bins)
+
+# 3. Create a 2D histogram for the spherical coordinates
+hist, theta_edges, phi_edges = np.histogram2d(theta, phi, bins=[theta_bins, phi_bins])
+
+# 4. Set up the spherical plot
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(111, projection='3d')
+
+# Normalize histogram to get a color scale
+norm = Normalize(vmin=np.min(hist), vmax=np.max(hist))
+colors = cm.viridis(norm(hist))
+
+# Generate meshgrid for spherical coordinates (for plotting)
+phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2
+theta_centers = (theta_edges[:-1] + theta_edges[1:]) / 2
+phi_grid, theta_grid = np.meshgrid(phi_centers, theta_centers)
+
+# 5. Convert spherical coordinates back to Cartesian for plotting
+x = r[0] * np.sin(theta_grid) * np.cos(phi_grid)
+y = r[0] * np.sin(theta_grid) * np.sin(phi_grid)
+z = r[0] * np.cos(theta_grid)
+
+# 6. Plot the spherical histogram
+ax.scatter(x, y, z, c=hist.flatten(), cmap='viridis', s=10)
+
+# Set up labels and titles
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_zlabel('Z')
+ax.set_title('Spherical Histogram of Ray Data')
+
+# Show color bar
+plt.colorbar(cm.ScalarMappable(norm=norm, cmap='viridis'), ax=ax, label='Count')
+
+plt.show()
