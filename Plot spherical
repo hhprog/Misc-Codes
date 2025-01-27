@@ -1,76 +1,41 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
-from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
 
-# Example ray data (replace with your actual ray data and flux values)
-# Assuming ray_data has shape (N, 6) where columns are: x, y, z, vx, vy, vz, and flux
-np.random.seed(0)  # For reproducibility
-N = 1000
-ray_data = np.random.randn(N, 6)  # Replace this with actual ray data
-flux = np.random.rand(N)  # Replace with actual flux data
+# Generate sample XYZ ray data
+np.random.seed(42)
+num_points = 100
+x = np.random.rand(num_points) * 10 - 5
+y = np.random.rand(num_points) * 10 - 5
+z = np.random.rand(num_points) * 10 - 5
 
-# 1. Extract position vectors and normalize direction vectors
-vectors = ray_data[:, :3]
-r = np.linalg.norm(vectors, axis=1)
-vectors_normalized = vectors / r[:, None]  # Normalize direction vectors
+# Convert Cartesian coordinates (x, y, z) to spherical coordinates (r, theta, phi)
+r = np.sqrt(x**2 + y**2 + z**2)  # Radial distance
+theta = np.arctan2(y, x)         # Azimuthal angle (in radians)
+phi = np.arccos(z / r)           # Polar angle (in radians)
 
-# 2. Convert to spherical coordinates (theta and phi)
-theta = np.arccos(vectors_normalized[:, 2])  # Polar angle
-phi = np.arctan2(vectors_normalized[:, 1], vectors_normalized[:, 0])  # Azimuthal angle
+# Polar plot (2D)
+plt.figure(figsize=(8, 8))
+ax = plt.subplot(111, projection='polar')
+sc = ax.scatter(theta, r, c=phi, cmap='hsv', alpha=0.75)
+plt.colorbar(sc, label='Polar Angle (phi)')
+ax.set_title("Polar Plot of XYZ Data")
+plt.show()
 
-# 3. Bin the data, weighted by flux
-n_theta_bins = 18  # Bins in theta (10° each from 0° to 180°)
-n_phi_bins = 36    # Bins in phi (10° each from -180° to 180°)
-
-theta_bins = np.linspace(0, np.pi, n_theta_bins + 1)
-phi_bins = np.linspace(-np.pi, np.pi, n_phi_bins + 1)
-
-hist, _, _ = np.histogram2d(theta, phi, bins=[theta_bins, phi_bins], weights=flux)
-
-# 4. Prepare for spherical plot
-theta_centers = (theta_bins[:-1] + theta_bins[1:]) / 2
-phi_centers = (phi_bins[:-1] + phi_bins[1:]) / 2
-phi_grid, theta_grid = np.meshgrid(phi_centers, theta_centers)
-
-# Convert spherical coordinates to Cartesian coordinates
-x = hist * np.sin(theta_grid) * np.cos(phi_grid)
-y = hist * np.sin(theta_grid) * np.sin(phi_grid)
-z = hist * np.cos(theta_grid)
-
-# 5. Plot on a spherical plot
-fig = plt.figure(figsize=(10, 8))
+# Spherical plot (3D)
+fig = plt.figure(figsize=(10, 10))
 ax = fig.add_subplot(111, projection='3d')
 
-# Normalize the histogram for color mapping
-norm = Normalize(vmin=np.min(hist), vmax=np.max(hist))
-colors = cm.viridis(norm(hist.flatten()))
+# Convert spherical coordinates back to Cartesian for plotting
+x_sphere = r * np.sin(phi) * np.cos(theta)
+y_sphere = r * np.sin(phi) * np.sin(theta)
+z_sphere = r * np.cos(phi)
 
-# Plot the histogram data as points
-for i in range(len(theta_centers)):
-    for j in range(len(phi_centers)):
-        ax.plot(
-            [0, x[i, j]],
-            [0, y[i, j]],
-            [0, z[i, j]],
-            color=cm.viridis(norm(hist[i, j])),
-            alpha=0.7
-        )
-
-# Add major gridlines every 10°
-ax.xaxis.set_major_locator(plt.MultipleLocator(10))
-ax.yaxis.set_major_locator(plt.MultipleLocator(10))
-ax.zaxis.set_major_locator(plt.MultipleLocator(10))
-
-# Set labels and title
-ax.set_title("Angular Distribution of Vectors Weighted by Flux")
+# Plot the 3D spherical data
+sc = ax.scatter(x_sphere, y_sphere, z_sphere, c=r, cmap='viridis', alpha=0.75)
 ax.set_xlabel('X')
 ax.set_ylabel('Y')
 ax.set_zlabel('Z')
-
-# Add color bar
-sm = cm.ScalarMappable(norm=norm, cmap='viridis')
-sm.set_array([])
-plt.colorbar(sm, ax=ax, label='Weighted Flux')
-
+plt.colorbar(sc, label='Radial Distance (r)')
+ax.set_title("Spherical Plot of XYZ Data")
 plt.show()
