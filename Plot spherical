@@ -1,41 +1,53 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.colors import Normalize
+from matplotlib import cm
 
-# Generate sample XYZ ray data
-np.random.seed(42)
-num_points = 100
-x = np.random.rand(num_points) * 10 - 5
-y = np.random.rand(num_points) * 10 - 5
-z = np.random.rand(num_points) * 10 - 5
+# Example ray data (replace with your actual ray data and flux values)
+np.random.seed(0)  # For reproducibility
+N = 1000
+ray_data = np.random.randn(N, 6)  # Replace this with actual ray data
+flux = np.random.rand(N)  # Replace with actual flux data
 
-# Convert Cartesian coordinates (x, y, z) to spherical coordinates (r, theta, phi)
-r = np.sqrt(x**2 + y**2 + z**2)  # Radial distance
-theta = np.arctan2(y, x)         # Azimuthal angle (in radians)
-phi = np.arccos(z / r)           # Polar angle (in radians)
+# 1. Extract position vectors
+vectors = ray_data[:, :3]
+r = np.linalg.norm(vectors, axis=1)
+vectors_normalized = vectors / r[:, None]
 
-# Polar plot (2D)
-plt.figure(figsize=(8, 8))
-ax = plt.subplot(111, projection='polar')
-sc = ax.scatter(theta, r, c=phi, cmap='hsv', alpha=0.75)
-plt.colorbar(sc, label='Polar Angle (phi)')
-ax.set_title("Polar Plot of XYZ Data")
-plt.show()
+# 2. Convert to spherical coordinates (theta and phi)
+theta = np.arccos(vectors_normalized[:, 2])  # Polar angle
+phi = np.arctan2(vectors_normalized[:, 1], vectors_normalized[:, 0])  # Azimuthal angle
 
-# Spherical plot (3D)
-fig = plt.figure(figsize=(10, 10))
-ax = fig.add_subplot(111, projection='3d')
+# 3. Bin the data (weighted by flux)
+n_theta_bins = 18  # 10° bins for theta
+n_phi_bins = 36    # 10° bins for phi
+theta_bins = np.linspace(0, np.pi, n_theta_bins + 1)
+phi_bins = np.linspace(-np.pi, np.pi, n_phi_bins + 1)
 
-# Convert spherical coordinates back to Cartesian for plotting
-x_sphere = r * np.sin(phi) * np.cos(theta)
-y_sphere = r * np.sin(phi) * np.sin(theta)
-z_sphere = r * np.cos(phi)
+hist, theta_edges, phi_edges = np.histogram2d(theta, phi, bins=[theta_bins, phi_bins], weights=flux)
 
-# Plot the 3D spherical data
-sc = ax.scatter(x_sphere, y_sphere, z_sphere, c=r, cmap='viridis', alpha=0.75)
-ax.set_xlabel('X')
-ax.set_ylabel('Y')
-ax.set_zlabel('Z')
-plt.colorbar(sc, label='Radial Distance (r)')
-ax.set_title("Spherical Plot of XYZ Data")
+# Normalize the histogram for color intensity
+norm = Normalize(vmin=np.min(hist), vmax=np.max(hist))
+
+# 4. Create the polar plot
+fig = plt.figure(figsize=(8, 8))
+ax = fig.add_subplot(111, polar=True)
+
+# Calculate bin centers
+theta_centers = (theta_edges[:-1] + theta_edges[1:]) / 2
+phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2
+phi_grid, theta_grid = np.meshgrid(phi_centers, theta_centers)
+
+# Plot the histogram as a colormap on the polar plot
+c = ax.pcolormesh(phi_edges, theta_edges, hist, cmap='viridis', shading='auto', norm=norm)
+
+# Add color bar for intensity
+cbar = plt.colorbar(c, ax=ax, orientation='vertical', pad=0.1)
+cbar.set_label('Flux-Weighted Intensity')
+
+# Set gridlines and labels
+ax.set_theta_zero_location('N')  # Zero angle at the top
+ax.set_theta_direction(-1)       # Clockwise angles
+ax.set_title("Polar Plot of Angular Distribution (Color = Intensity)", va='bottom')
+
 plt.show()
