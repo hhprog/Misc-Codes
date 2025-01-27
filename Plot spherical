@@ -4,7 +4,7 @@ from matplotlib.colors import Normalize
 from matplotlib import cm
 
 # Example ray data (replace with your actual ray data and flux values)
-np.random.seed(0)  # For reproducibility
+np.random.seed(0)
 N = 1000
 ray_data = np.random.randn(N, 6)  # Replace this with actual ray data
 flux = np.random.rand(N)  # Replace with actual flux data
@@ -26,28 +26,33 @@ phi_bins = np.linspace(-np.pi, np.pi, n_phi_bins + 1)
 
 hist, theta_edges, phi_edges = np.histogram2d(theta, phi, bins=[theta_bins, phi_bins], weights=flux)
 
-# Normalize the histogram for color intensity
-norm = Normalize(vmin=np.min(hist), vmax=np.max(hist))
+# Calculate bin centers
+theta_centers = (theta_edges[:-1] + theta_edges[1:]) / 2  # Midpoints of theta bins
+phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2        # Midpoints of phi bins
 
-# 4. Create the polar plot
+# Flatten the histogram and the bin centers for plotting
+theta_flat = np.repeat(theta_centers, len(phi_centers))  # Radial (theta) values
+phi_flat = np.tile(phi_centers, len(theta_centers))      # Angular (phi) values
+hist_flat = hist.flatten()                               # Histogram intensities
+
+# Normalize the histogram for color mapping
+norm = Normalize(vmin=np.min(hist_flat), vmax=np.max(hist_flat))
+colors = cm.viridis(norm(hist_flat))
+
+# 4. Create the polar scatter plot
 fig = plt.figure(figsize=(8, 8))
 ax = fig.add_subplot(111, polar=True)
 
-# Calculate bin centers
-theta_centers = (theta_edges[:-1] + theta_edges[1:]) / 2
-phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2
-phi_grid, theta_grid = np.meshgrid(phi_centers, theta_centers)
-
-# Plot the histogram as a colormap on the polar plot
-c = ax.pcolormesh(phi_edges, theta_edges, hist, cmap='viridis', shading='auto', norm=norm)
+# Scatter plot with binned data
+scatter = ax.scatter(phi_flat, theta_flat, c=hist_flat, cmap='viridis', s=50, alpha=0.8)
 
 # Add color bar for intensity
-cbar = plt.colorbar(c, ax=ax, orientation='vertical', pad=0.1)
-cbar.set_label('Flux-Weighted Intensity')
+cbar = plt.colorbar(scatter, ax=ax, orientation='vertical', pad=0.1)
+cbar.set_label('Binned Flux-Weighted Intensity')
 
-# Set gridlines and labels
+# Configure the plot
 ax.set_theta_zero_location('N')  # Zero angle at the top
 ax.set_theta_direction(-1)       # Clockwise angles
-ax.set_title("Polar Plot of Angular Distribution (Color = Intensity)", va='bottom')
+ax.set_title("Polar Scatter Plot of Binned Angular Distribution", va='bottom')
 
 plt.show()
