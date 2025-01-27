@@ -19,40 +19,54 @@ theta = np.arccos(vectors_normalized[:, 2])  # Polar angle
 phi = np.arctan2(vectors_normalized[:, 1], vectors_normalized[:, 0])  # Azimuthal angle
 
 # 3. Bin the data (weighted by flux)
-n_theta_bins = 18  # 10° bins for theta
-n_phi_bins = 36    # 10° bins for phi
-theta_bins = np.linspace(0, np.pi, n_theta_bins + 1)
-phi_bins = np.linspace(-np.pi, np.pi, n_phi_bins + 1)
+n_theta_bins = 9  # 10° bins for theta (from 0 to pi/2)
+n_phi_bins = 36   # 10° bins for phi (from -pi to pi)
 
+theta_bins = np.linspace(0, np.pi / 2, n_theta_bins + 1)  # Adjusted theta range
+phi_bins = np.linspace(-np.pi, np.pi, n_phi_bins + 1)     # Full range for phi
+
+# Histogram of flux weighted by bin areas
 hist, theta_edges, phi_edges = np.histogram2d(theta, phi, bins=[theta_bins, phi_bins], weights=flux)
+
+# 4. Calculate bin areas for normalization
+theta_bin_widths = np.diff(theta_edges)  # Widths of theta bins
+phi_bin_width = np.diff(phi_edges)[0]    # Constant phi bin width
+
+# Bin area = Δphi * (cos(θ_min) - cos(θ_max))
+theta_min = theta_edges[:-1]
+theta_max = theta_edges[1:]
+bin_areas = phi_bin_width * (np.cos(theta_min) - np.cos(theta_max))
+
+# Normalize histogram values to Watts per steradian
+hist_normalized = hist / bin_areas[:, None]  # Divide each row by corresponding bin area
 
 # Calculate bin centers
 theta_centers = (theta_edges[:-1] + theta_edges[1:]) / 2  # Midpoints of theta bins
 phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2        # Midpoints of phi bins
 
-# Flatten the histogram and the bin centers for plotting
+# Flatten the normalized histogram and bin centers for plotting
 theta_flat = np.repeat(theta_centers, len(phi_centers))  # Radial (theta) values
 phi_flat = np.tile(phi_centers, len(theta_centers))      # Angular (phi) values
-hist_flat = hist.flatten()                               # Histogram intensities
+hist_flat = hist_normalized.flatten()                   # Flatten normalized histogram
 
-# Normalize the histogram for color mapping
+# Normalize the data for color mapping
 norm = Normalize(vmin=np.min(hist_flat), vmax=np.max(hist_flat))
 colors = cm.viridis(norm(hist_flat))
 
-# 4. Create the polar scatter plot
+# 5. Create the polar scatter plot
 fig = plt.figure(figsize=(8, 8))
 ax = fig.add_subplot(111, polar=True)
 
-# Scatter plot with binned data
+# Scatter plot with normalized binned data
 scatter = ax.scatter(phi_flat, theta_flat, c=hist_flat, cmap='viridis', s=50, alpha=0.8)
 
 # Add color bar for intensity
 cbar = plt.colorbar(scatter, ax=ax, orientation='vertical', pad=0.1)
-cbar.set_label('Binned Flux-Weighted Intensity')
+cbar.set_label('Watts per Steradian')
 
 # Configure the plot
 ax.set_theta_zero_location('N')  # Zero angle at the top
 ax.set_theta_direction(-1)       # Clockwise angles
-ax.set_title("Polar Scatter Plot of Binned Angular Distribution", va='bottom')
+ax.set_title("Polar Scatter Plot: Normalized to Watts per Steradian", va='bottom')
 
 plt.show()
