@@ -1,0 +1,30 @@
+import os
+import pandas as pd
+
+# Define the root directory where subfolders are located
+root_dir = "path/to/your/folder"
+
+# Initialize an empty list to store DataFrames
+dfs = []
+
+# Loop through each subdirectory and file
+for subdir, _, files in os.walk(root_dir):
+    for file in files:
+        if file.endswith(".txt"):  # Adjust for your file type
+            file_path = os.path.join(subdir, file)
+
+            # Read the file (adjust delimiter if needed)
+            df = pd.read_csv(file_path, delimiter="\t")  # Change delimiter as needed
+
+            # Extract folder name (metadata) if needed
+            df["Source Folder"] = os.path.basename(subdir)
+            df["File Name"] = file  # Optional: Track filename
+
+            # Append to the list
+            dfs.append(df)
+
+# Concatenate all DataFrames into one
+final_df = pd.concat(dfs, ignore_index=True)
+
+# Display result
+print(final_df.head())
