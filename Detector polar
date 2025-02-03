@@ -1,0 +1,38 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from matplotlib import cm
+
+# Example ray data (replace with actual data)
+np.random.seed(0)
+N = 1000
+ray_data = np.random.randn(N, 6)  # Assume first 3 cols are direction vectors
+flux = np.abs(np.random.randn(N))  # Example flux values (positive)
+
+# Convert to spherical coordinates
+vectors = ray_data[:, :3]
+r = np.linalg.norm(vectors, axis=1)
+vectors_normalized = vectors / r[:, None]
+theta = np.arccos(vectors_normalized[:, 2])  # Polar angle (0 to pi)
+phi = np.arctan2(vectors_normalized[:, 1], vectors_normalized[:, 0])  # Azimuth angle (-pi to pi)
+
+# Define bins (theta bins from 0 to pi/2)
+n_theta_bins = 20
+theta_bins = np.linspace(0, np.pi / 2, n_theta_bins + 1)
+
+# Compute histogram weighted by flux
+hist, theta_edges = np.histogram(theta, bins=theta_bins, weights=flux)
+
+# Normalize by bin area for steradian correction
+bin_areas = np.diff(np.cos(theta_edges))  # Using cos(θ) difference for solid angle scaling
+hist_normalized = hist / bin_areas  # Normalize to steradians
+
+# Plot 2D histogram (Intensity vs. Theta)
+fig, ax = plt.subplots(figsize=(8, 6))
+theta_centers = (theta_edges[:-1] + theta_edges[1:]) / 2  # Midpoints
+ax.bar(theta_centers, hist_normalized, width=np.diff(theta_edges), edgecolor='black', align='center')
+
+ax.set_xlabel(r'Polar Angle $\theta$ (radians)')
+ax.set_ylabel('Flux Density (W/sr)')
+ax.set_title('Histogram of Flux vs. Polar Angle')
+plt.show()
