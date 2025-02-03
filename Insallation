@@ -1,0 +1,7 @@
+bash miniconda.sh -b -p $HOME/miniconda3
+export PATH=$HOME/miniconda3/bin:$PATH
+conda create -n mp -c conda-forge pymeep pymeep-extras
+conda activate mp
+conda install -c conda-forge jupyterlab
+python -m ipykernel install --user --name mp --display-name "Python (mp)"
+jupyter lab
