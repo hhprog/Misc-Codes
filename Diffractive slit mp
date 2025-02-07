@@ -1,0 +1,135 @@
+import meep as mp
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+resolution = 20  # pixels per micron
+
+# Simulation cell dimensions
+sx = 16  # x size
+sy = 10  # y size
+cell_size = mp.Vector3(sx, sy, 0)
+
+dpml = 1.0  # PML thickness
+pml_layers = [mp.PML(dpml)]
+
+# Slit parameters
+slit_width = 1.0  # Width of the slit
+slit_material = mp.Medium(epsilon=1.0)  # Air inside the slit
+metal_material = mp.Medium(epsilon=12.0)  # Opaque material
+
+# Geometry: Opaque barrier with a narrow slit
+geometry = [
+    mp.Block(
+        size=mp.Vector3(sx, sy / 3, mp.inf),  # Large opaque block
+        center=mp.Vector3(0, -sy / 3, 0),
+        material=metal_material,
+    ),
+    mp.Block(
+        size=mp.Vector3(sx, sy / 3, mp.inf),  # Top part of the block
+        center=mp.Vector3(0, sy / 3, 0),
+        material=metal_material,
+    ),
+    mp.Block(
+        size=mp.Vector3(slit_width, sy / 3, mp.inf),  # Slit opening
+        center=mp.Vector3(0, 0, 0),
+        material=slit_material,
+    ),
+]
+
+# Source parameters
+fcen = 0.15  # Central frequency of the source
+df = 0.1  # Frequency width
+sources = [
+    mp.Source(
+        mp.GaussianSource(fcen, fwidth=df),
+        component=mp.Ez,
+        center=mp.Vector3(-sx / 2 + dpml, 0, 0),  # Incident from the left
+        size=mp.Vector3(0, sy, 0),
+    )
+]
+
+sim = mp.Simulation(
+    cell_size=cell_size,
+    boundary_layers=pml_layers,
+    geometry=geometry,
+    sources=sources,
+    resolution=resolution,
+)
+
+nfreq = 50  # Number of frequency points
+
+# Flux regions
+refl_fr = mp.FluxRegion(center=mp.Vector3(-sx / 2 + dpml + 0.5, 0, 0), size=mp.Vector3(0, sy, 0))
+tran_fr = mp.FluxRegion(center=mp.Vector3(sx / 2 - dpml - 0.5, 0, 0), size=mp.Vector3(0, sy, 0))
+
+refl = sim.add_flux(fcen, df, nfreq, refl_fr)
+tran = sim.add_flux(fcen, df, nfreq, tran_fr)
+
+# Run the simulation
+pt = mp.Vector3(sx / 2 - dpml - 0.5, 0, 0)
+sim.run(until_after_sources=mp.stop_when_fields_decayed(50, mp.Ez, pt, 1e-4))
+
+# Save reference flux
+straight_refl_data = sim.get_flux_data(refl)
+straight_tran_flux = mp.get_fluxes(tran)
+
+sim.reset_meep()
+
+# Run with slit
+sim = mp.Simulation(
+    cell_size=cell_size,
+    boundary_layers=pml_layers,
+    geometry=geometry,
+    sources=sources,
+    resolution=resolution,
+)
+
+refl = sim.add_flux(fcen, df, nfreq, refl_fr)
+tran = sim.add_flux(fcen, df, nfreq, tran_fr)
+
+sim.load_minus_flux_data(refl, straight_refl_data)
+
+pt = mp.Vector3(sx / 2 - dpml - 0.5, 0, 0)
+sim.run(until_after_sources=mp.stop_when_fields_decayed(50, mp.Ez, pt, 1e-4))
+
+bend_refl_flux = mp.get_fluxes(refl)
+bend_tran_flux = mp.get_fluxes(tran)
+
+flux_freqs = mp.get_flux_freqs(refl)
+
+wl = []
+Rs = []
+Ts = []
+for i in range(nfreq):
+    wl.append(1 / flux_freqs[i])
+    Rs.append(-bend_refl_flux[i] / straight_tran_flux[i])
+    Ts.append(bend_tran_flux[i] / straight_tran_flux[i])
+
+plt.figure()
+plt.plot(wl, Rs, "bo-", label="Reflectance")
+plt.plot(wl, Ts, "ro-", label="Transmittance")
+plt.plot(wl, 1 - np.array(Rs) - np.array(Ts), "go-", label="Loss")
+plt.xlabel("Wavelength (μm)")
+plt.legend()
+plt.show()
+
+# Generate video
+if not os.path.exists("meep_movie"):
+    os.makedirs("meep_movie")
+
+def plot_field(sim, step):
+    eps_data = sim.get_epsilon()
+    field_data = np.real(sim.get_array(center=mp.Vector3(), size=cell_size, component=mp.Ez))
+
+    plt.figure(figsize=(6, 4))
+    plt.imshow(field_data, interpolation="spline16", cmap="RdBu", origin="lower", extent=(-sx / 2, sx / 2, -sy / 2, sy / 2))
+    plt.colorbar(label="Ez Field")
+    plt.title(f"Step {step}")
+    plt.savefig(f"meep_movie/frame_{step:03d}.png")
+    plt.close()
+
+sim.run(mp.at_every(10, plot_field), until=200)
+
+# Convert frames to video (requires ffmpeg)
+os.system("ffmpeg -r 10 -i meep_movie/frame_%03d.png -vcodec libx264 -y meep_movie/output.mp4")
