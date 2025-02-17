@@ -1,0 +1,163 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib import cm, colors
+import meep as mp
+
+def get_block_corners(center, size, cell_bounds, min_thickness=0.05):
+    """
+    Compute the eight corner points for a block.
+    If any component of size is mp.inf, then that extent is clipped to the cell bounds.
+    For any zero thickness, a minimum thickness is used.
+    """
+    cell_x_min, cell_x_max, cell_y_min, cell_y_max, cell_z_min, cell_z_max = cell_bounds
+    
+    # X-axis
+    if size.x == mp.inf:
+        x_min, x_max = cell_x_min, cell_x_max
+    else:
+        thickness_x = size.x if size.x != 0 else min_thickness
+        x_min = center.x - thickness_x / 2
+        x_max = center.x + thickness_x / 2
+
+    # Y-axis
+    if size.y == mp.inf:
+        y_min, y_max = cell_y_min, cell_y_max
+    else:
+        thickness_y = size.y if size.y != 0 else min_thickness
+        y_min = center.y - thickness_y / 2
+        y_max = center.y + thickness_y / 2
+
+    # Z-axis
+    if size.z == mp.inf:
+        z_min, z_max = cell_z_min, cell_z_max
+    else:
+        thickness_z = size.z if size.z != 0 else min_thickness
+        z_min = center.z - thickness_z / 2
+        z_max = center.z + thickness_z / 2
+
+    corners = np.array([
+        [x_min, y_min, z_min],
+        [x_max, y_min, z_min],
+        [x_max, y_max, z_min],
+        [x_min, y_max, z_min],
+        [x_min, y_min, z_max],
+        [x_max, y_min, z_max],
+        [x_max, y_max, z_max],
+        [x_min, y_max, z_max]
+    ])
+    return corners
+
+def draw_box(ax, center, size, cell_bounds, color, alpha=0.5, outline=True, min_thickness=0.05):
+    """
+    Draw a box (as a Poly3DCollection) for a given center and size.
+    Infinite dimensions are clipped to cell_bounds; zero thickness is replaced by min_thickness.
+    """
+    corners = get_block_corners(center, size, cell_bounds, min_thickness)
+    # Define the six faces using the corner indices.
+    faces = [
+        [corners[i] for i in face]
+        for face in [(0,1,2,3), (4,5,6,7),
+                     (0,1,5,4), (1,2,6,5),
+                     (2,3,7,6), (3,0,4,7)]
+    ]
+    pc = Poly3DCollection(faces, facecolors=color, alpha=alpha,
+                          edgecolor='k' if outline else None)
+    ax.add_collection3d(pc)
+
+def plot3D(sim, cell_size, save_to_image=False, image_name="sim.png",
+           frequency=None, threshold=1e-3, **kwargs):
+    """
+    Visualizes the 3D simulation cell, including:
+      - The epsilon distribution (as a voxel plot)
+      - Sources (plotted as red boxes)
+      - Monitors (plotted as blue boxes)
+    
+    Parameters:
+      sim           : The simulation object (with attributes such as geometry_center, cell_size, resolution,
+                      get_epsilon_grid, sources, dft_objects, and default_material)
+      cell_size     : The simulation cell size as an mp.Vector3 (cell is assumed centered at (0,0,0))
+      save_to_image : If True, the figure is saved to image_name instead of shown interactively.
+      image_name    : Filename for saving the image.
+      frequency     : Frequency at which to retrieve epsilon (if needed)
+      threshold     : Minimum difference from the background epsilon to plot voxels.
+      **kwargs      : Other keyword arguments (e.g., camera view settings) [not used here but available for extension]
+    """
+    # Compute cell bounds (assuming cell is centered at (0,0,0))
+    cell_x_min = -cell_size.x / 2
+    cell_x_max =  cell_size.x / 2
+    cell_y_min = -cell_size.y / 2
+    cell_y_max =  cell_size.y / 2
+    cell_z_min = -cell_size.z / 2
+    cell_z_max =  cell_size.z / 2
+    cell_bounds = (cell_x_min, cell_x_max, cell_y_min, cell_y_max, cell_z_min, cell_z_max)
+    
+    # Create figure and 3D axis.
+    fig = plt.figure(figsize=(8,6))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Get grid for epsilon data.
+    grid_res = sim.resolution
+    Nx = int((cell_x_max - cell_x_min) * grid_res) + 1
+    Ny = int((cell_y_max - cell_y_min) * grid_res) + 1
+    Nz = int((cell_z_max - cell_z_min) * grid_res) + 1
+    
+    xgrid = np.linspace(cell_x_min, cell_x_max, Nx)
+    ygrid = np.linspace(cell_y_min, cell_y_max, Ny)
+    zgrid = np.linspace(cell_z_min, cell_z_max, Nz)
+    
+    # Get the epsilon grid from the simulation.
+    eps_data = np.real(sim.get_epsilon_grid(xgrid, ygrid, zgrid, frequency))
+    
+    # Determine default background epsilon (if available)
+    try:
+        default_eps = np.round(np.abs(sim.default_material.epsilon_diag[0]), 2)
+    except Exception:
+        default_eps = 1.0
+
+    # Create a mask: only voxels where epsilon differs from background by more than threshold.
+    mask = np.abs(eps_data - default_eps) > threshold
+    # Matplotlib's voxels expects an array of shape (Nx-1, Ny-1, Nz-1) when xgrid, ygrid, zgrid are provided.
+    mask = mask[:-1, :-1, :-1]
+    
+    # Map the epsilon values to colors using a colormap.
+    norm = colors.Normalize(vmin=np.min(eps_data), vmax=np.max(eps_data))
+    colormap = cm.get_cmap("viridis")
+    facecolors = colormap(norm(eps_data))
+    # Also reduce facecolors array to match mask dimensions.
+    facecolors = facecolors[:-1, :-1, :-1]
+    
+    # Plot the voxels for epsilon.
+    ax.voxels(xgrid, ygrid, zgrid, mask, facecolors=facecolors, edgecolor=None, alpha=0.8)
+    
+    # Plot sources as red boxes.
+    if sim.sources is not None:
+        for src in sim.sources:
+            # Assume src has attributes center and size.
+            draw_box(ax, src.center, src.size, cell_bounds,
+                     color=(1, 0, 0, 0.6), alpha=0.6, outline=True, min_thickness=0.05)
+    
+    # Plot monitors as blue boxes.
+    if sim.dft_objects is not None:
+        for mon in sim.dft_objects:
+            # Assume each monitor has one or more regions.
+            for reg in mon.regions:
+                draw_box(ax, reg.center, reg.size, cell_bounds,
+                         color=(0, 0, 1, 0.6), alpha=0.6, outline=True, min_thickness=0.05)
+    
+    # Set axis labels.
+    ax.set_xlabel("X (μm)")
+    ax.set_ylabel("Y (μm)")
+    ax.set_zlabel("Z (μm)")
+    
+    # Set limits based on cell bounds.
+    ax.set_xlim(cell_x_min, cell_x_max)
+    ax.set_ylim(cell_y_min, cell_y_max)
+    ax.set_zlim(cell_z_min, cell_z_max)
+    
+    # Optionally save the figure or display interactively.
+    if save_to_image:
+        plt.savefig(image_name, dpi=150)
+        plt.close(fig)
+    else:
+        plt.show()
