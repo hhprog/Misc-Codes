@@ -1,0 +1,206 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+import meep as mp
+
+def get_block_corners(center, size, cell_bounds, min_thickness=0.05):
+    cell_x_min, cell_x_max, cell_y_min, cell_y_max, cell_z_min, cell_z_max = cell_bounds
+    
+    # X-axis: if size.x is infinite then use cell bounds; if 0 then use min_thickness.
+    if size.x == mp.inf:
+        x_min, x_max = cell_x_min, cell_x_max
+    else:
+        thickness_x = size.x if size.x != 0 else min_thickness
+        x_min = center.x - thickness_x / 2
+        x_max = center.x + thickness_x / 2
+
+    # Y-axis
+    if size.y == mp.inf:
+        y_min, y_max = cell_y_min, cell_y_max
+    else:
+        thickness_y = size.y if size.y != 0 else min_thickness
+        y_min = center.y - thickness_y / 2
+        y_max = center.y + thickness_y / 2
+
+    # Z-axis
+    if size.z == mp.inf:
+        z_min, z_max = cell_z_min, cell_z_max
+    else:
+        thickness_z = size.z if size.z != 0 else min_thickness
+        z_min = center.z - thickness_z / 2
+        z_max = center.z + thickness_z / 2
+
+    corners = np.array([
+        [x_min, y_min, z_min],
+        [x_max, y_min, z_min],
+        [x_max, y_max, z_min],
+        [x_min, y_max, z_min],
+        [x_min, y_min, z_max],
+        [x_max, y_min, z_max],
+        [x_max, y_max, z_max],
+        [x_min, y_max, z_max]
+    ])
+    return corners
+
+def draw_block(ax, center, size, cell_bounds, color, outline=True, min_thickness=0.05, alpha=0.6):
+    """Draws a block using its corners. Alpha transparency can be adjusted."""
+    corners = get_block_corners(center, size, cell_bounds, min_thickness)
+    faces = [
+        [corners[i] for i in face]
+        for face in [(0,1,2,3), (4,5,6,7),
+                     (0,1,5,4), (1,2,6,5),
+                     (2,3,7,6), (3,0,4,7)]
+    ]
+    pc = Poly3DCollection(faces, alpha=alpha,
+                          edgecolor='k' if outline else None,
+                          facecolor=color)
+    ax.add_collection3d(pc)
+
+def plot_meep_geometry(geometry, cell_size, sources=None, detectors=None, outline=True, min_thickness=0.05):
+    """
+    Plots the 3D simulation objects.
+    
+    - geometry: list of Meep geometry objects (Block, Cylinder, Sphere, Ellipsoid, Prism)
+    - cell_size: simulation cell size (mp.Vector3); the cell is assumed centered at (0,0,0)
+    - sources: list of source objects (with attributes 'center' and 'size') or tuples (center, size)
+    - detectors: list of detector objects (with attributes 'center' and 'size') or tuples (center, size)
+    
+    For dimensions set to 0, a minimal thickness is used. Infinite dimensions are clipped
+    to the simulation cell bounds.
+    """
+    fig = plt.figure(figsize=(8,6))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Compute cell bounds from the passed cell_size:
+    cell_x_min = -cell_size.x / 2
+    cell_x_max =  cell_size.x / 2
+    cell_y_min = -cell_size.y / 2
+    cell_y_max =  cell_size.y / 2
+    cell_z_min = -cell_size.z / 2
+    cell_z_max =  cell_size.z / 2
+    cell_bounds = (cell_x_min, cell_x_max, cell_y_min, cell_y_max, cell_z_min, cell_z_max)
+    
+    # --- Draw geometry objects ---
+    for obj in geometry:
+        if isinstance(obj, mp.Block):
+            draw_block(ax, obj.center, obj.size, cell_bounds,
+                       color='lightgray', outline=outline, min_thickness=min_thickness, alpha=0.6)
+        
+        elif isinstance(obj, mp.Cylinder):
+            # For cylinders, clip radius and height if infinite.
+            r = (cell_x_max - cell_x_min) / 2 if obj.radius == mp.inf else obj.radius
+            if obj.height == mp.inf:
+                z_min, z_max = cell_z_min, cell_z_max
+            else:
+                z_min = obj.center.z - obj.height / 2
+                z_max = obj.center.z + obj.height / 2
+            theta = np.linspace(0, 2*np.pi, 30)
+            x = r * np.cos(theta) + obj.center.x
+            y = r * np.sin(theta) + obj.center.y
+            ax.plot_trisurf(x, y, np.full_like(x, z_min), alpha=0.6, color='lightgray',
+                              edgecolor='k' if outline else None)
+            ax.plot_trisurf(x, y, np.full_like(x, z_max), alpha=0.6, color='lightgray',
+                              edgecolor='k' if outline else None)
+        
+        elif isinstance(obj, mp.Sphere):
+            r = (cell_x_max - cell_x_min) / 2 if obj.radius == mp.inf else obj.radius
+            u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+            x = r * np.cos(u) * np.sin(v) + obj.center.x
+            y = r * np.sin(u) * np.sin(v) + obj.center.y
+            z = r * np.cos(v) + obj.center.z
+            ax.plot_surface(x, y, z, alpha=0.6, color='lightgray')
+        
+        elif isinstance(obj, mp.Ellipsoid):
+            size_x = cell_size.x if obj.size.x == mp.inf else obj.size.x
+            size_y = cell_size.y if obj.size.y == mp.inf else obj.size.y
+            size_z = cell_size.z if obj.size.z == mp.inf else obj.size.z
+            u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+            x = size_x * np.cos(u) * np.sin(v) + obj.center.x
+            y = size_y * np.sin(u) * np.sin(v) + obj.center.y
+            z = size_z * np.cos(v) + obj.center.z
+            ax.plot_surface(x, y, z, alpha=0.6, color='lightgray')
+        
+        elif isinstance(obj, mp.Prism):
+            if obj.height == mp.inf:
+                z_min, z_max = cell_z_min, cell_z_max
+            else:
+                z_min = obj.center.z - obj.height / 2
+                z_max = obj.center.z + obj.height / 2
+            vertices = np.array([[v.x, v.y, z_min] for v in obj.vertices])
+            top_vertices = np.array([[v.x, v.y, z_max] for v in obj.vertices])
+            faces = [ [vertices[i] for i in range(len(vertices))] ]
+            faces.append([top_vertices[i] for i in range(len(top_vertices))])
+            for i in range(len(vertices)):
+                faces.append([
+                    vertices[i],
+                    vertices[(i+1) % len(vertices)],
+                    top_vertices[(i+1) % len(vertices)],
+                    top_vertices[i]
+                ])
+            ax.add_collection3d(Poly3DCollection(faces, alpha=0.6,
+                                                 edgecolor='k' if outline else None,
+                                                 facecolor='lightgray'))
+    
+    # --- Draw sources (if provided) ---
+    if sources is not None:
+        for src in sources:
+            # Allow sources to be provided as objects with attributes or as tuples (center, size)
+            if isinstance(src, tuple):
+                center, size = src
+            else:
+                center, size = src.center, src.size
+            draw_block(ax, center, size, cell_bounds,
+                       color='red', outline=outline, min_thickness=min_thickness, alpha=0.6)
+    
+    # --- Draw detectors (if provided) ---
+    if detectors is not None:
+        for det in detectors:
+            if isinstance(det, tuple):
+                center, size = det
+            else:
+                center, size = det.center, det.size
+            draw_block(ax, center, size, cell_bounds,
+                       color='blue', outline=outline, min_thickness=min_thickness, alpha=0.6)
+    
+    # Set the display limits to the simulation cell boundaries.
+    ax.set_xlabel("X (μm)")
+    ax.set_ylabel("Y (μm)")
+    ax.set_zlabel("Z (μm)")
+    ax.set_xlim(cell_x_min, cell_x_max)
+    ax.set_ylim(cell_y_min, cell_y_max)
+    ax.set_zlim(cell_z_min, cell_z_max)
+    plt.show()
+
+# -------------------------------
+# Example usage:
+# -------------------------------
+
+# Define a cell size (simulation cell is assumed centered at (0,0,0))
+cell_size = mp.Vector3(4, 4, 2)
+
+# Example geometry objects:
+geometry = [
+    # A Block with finite x and z but infinite y.
+    mp.Block(mp.Vector3(0.5, mp.inf, 0.4), center=mp.Vector3(0, 1, 0)),
+    mp.Cylinder(radius=0.3, height=0.8, center=mp.Vector3(1, 1, 0.4)),
+    mp.Sphere(radius=0.4, center=mp.Vector3(-1, -1, 0.4)),
+    mp.Ellipsoid(size=mp.Vector3(0.5, 0.3, 0.7), center=mp.Vector3(-1, 1, -1)),
+    mp.Prism(vertices=[mp.Vector3(-0.5, -0.5),
+                       mp.Vector3(0.5, -0.5),
+                       mp.Vector3(0, 0.5)],
+             height=0.7, center=mp.Vector3(1, -1, 0.35)),
+    mp.Block(mp.Vector3(1, 1, 1), center=mp.Vector3(1, 1, 0.4), material=mp.Medium(epsilon=12))
+]
+
+# Example source: using a source defined with a center and size.
+# Here, size components set to 0 (or mp.inf for an infinite extent) are handled appropriately.
+src = mp.Source(mp.GaussianSource(1/0.5, fwidth=0.2*(1/0.5), is_integrated=True),
+                component=mp.Ez,
+                center=mp.Vector3(-1.5, 0, 0),
+                size=mp.Vector3(0, 4, mp.inf))  # Zero thickness in x replaced with min_thickness; infinite z is clipped.
+
+# Example detector (monitor) as a tuple (center, size).
+detector = (mp.Vector3(1.5, 0, 0), mp.Vector3(0, 4, mp.inf))  # Zero thickness in x replaced; infinite z is clipped.
+
+# Call the function with geometry, sources, detectors, and without outlines.
+plot_meep_geometry(geometry, cell_size, sources=[src], detectors=[detector], outline=True)
