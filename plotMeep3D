@@ -1,206 +1,280 @@
+import meep as mp
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-import meep as mp
+from mpl_toolkits.mplot3d import Axes3D  # for 3D plotting
+import matplotlib
+from matplotlib import colors
 
-def get_block_corners(center, size, cell_bounds, min_thickness=0.05):
-    cell_x_min, cell_x_max, cell_y_min, cell_y_max, cell_z_min, cell_z_max = cell_bounds
-    
-    # X-axis: if size.x is infinite then use cell bounds; if 0 then use min_thickness.
-    if size.x == mp.inf:
-        x_min, x_max = cell_x_min, cell_x_max
-    else:
-        thickness_x = size.x if size.x != 0 else min_thickness
-        x_min = center.x - thickness_x / 2
-        x_max = center.x + thickness_x / 2
-
-    # Y-axis
-    if size.y == mp.inf:
-        y_min, y_max = cell_y_min, cell_y_max
-    else:
-        thickness_y = size.y if size.y != 0 else min_thickness
-        y_min = center.y - thickness_y / 2
-        y_max = center.y + thickness_y / 2
-
-    # Z-axis
-    if size.z == mp.inf:
-        z_min, z_max = cell_z_min, cell_z_max
-    else:
-        thickness_z = size.z if size.z != 0 else min_thickness
-        z_min = center.z - thickness_z / 2
-        z_max = center.z + thickness_z / 2
-
-    corners = np.array([
-        [x_min, y_min, z_min],
-        [x_max, y_min, z_min],
-        [x_max, y_max, z_min],
-        [x_min, y_max, z_min],
-        [x_min, y_min, z_max],
-        [x_max, y_min, z_max],
-        [x_max, y_max, z_max],
-        [x_min, y_max, z_max]
-    ])
-    return corners
-
-def draw_block(ax, center, size, cell_bounds, color, outline=True, min_thickness=0.05, alpha=0.6):
-    """Draws a block using its corners. Alpha transparency can be adjusted."""
-    corners = get_block_corners(center, size, cell_bounds, min_thickness)
-    faces = [
-        [corners[i] for i in face]
-        for face in [(0,1,2,3), (4,5,6,7),
-                     (0,1,5,4), (1,2,6,5),
-                     (2,3,7,6), (3,0,4,7)]
-    ]
-    pc = Poly3DCollection(faces, alpha=alpha,
-                          edgecolor='k' if outline else None,
-                          facecolor=color)
-    ax.add_collection3d(pc)
-
-def plot_meep_geometry(geometry, cell_size, sources=None, detectors=None, outline=True, min_thickness=0.05):
+# -------------------------------
+# Helper: Compute Box Mask on a Grid
+# -------------------------------
+def get_box_mask(center, size, Xc, Yc, Zc, min_thickness=0.05):
     """
-    Plots the 3D simulation objects.
-    
-    - geometry: list of Meep geometry objects (Block, Cylinder, Sphere, Ellipsoid, Prism)
-    - cell_size: simulation cell size (mp.Vector3); the cell is assumed centered at (0,0,0)
-    - sources: list of source objects (with attributes 'center' and 'size') or tuples (center, size)
-    - detectors: list of detector objects (with attributes 'center' and 'size') or tuples (center, size)
-    
-    For dimensions set to 0, a minimal thickness is used. Infinite dimensions are clipped
-    to the simulation cell bounds.
+    Given a box defined by center and size (with min_thickness substitution),
+    returns a boolean mask (same shape as Xc, Yc, Zc) that is True inside the box.
     """
-    fig = plt.figure(figsize=(8,6))
-    ax = fig.add_subplot(111, projection='3d')
-    
-    # Compute cell bounds from the passed cell_size:
+    tx = size.x if size.x != 0 else min_thickness
+    ty = size.y if size.y != 0 else min_thickness
+    tz = size.z if size.z != 0 else min_thickness
+    center_arr = np.array([center.x, center.y, center.z])
+    lower = center_arr - np.array([tx, ty, tz]) / 2
+    upper = center_arr + np.array([tx, ty, tz]) / 2
+    mask = ((Xc >= lower[0]) & (Xc <= upper[0]) &
+            (Yc >= lower[1]) & (Yc <= upper[1]) &
+            (Zc >= lower[2]) & (Zc <= upper[2]))
+    return mask
+
+# -------------------------------
+# Composite Plotting Function
+# -------------------------------
+
+def plot3D_composite(sim, cell_size, mesh_midpoint=mp.Vector3(), save_to_image=False,
+                     image_name="sim.png", frequency=None, threshold=1e-3):
+    """
+    Visualizes the 3D simulation cell by creating a composite voxel plot.
+    The composite voxel array includes:
+      - EPS data (from sim.get_epsilon_grid) wherever it differs from background
+      - Source regions (colored red)
+      - Monitor/detector regions (colored blue)
+    All data are mapped onto the same 3D grid.
+    """
+    # Compute cell bounds (assuming cell is centered at (0,0,0))
     cell_x_min = -cell_size.x / 2
     cell_x_max =  cell_size.x / 2
     cell_y_min = -cell_size.y / 2
     cell_y_max =  cell_size.y / 2
     cell_z_min = -cell_size.z / 2
     cell_z_max =  cell_size.z / 2
-    cell_bounds = (cell_x_min, cell_x_max, cell_y_min, cell_y_max, cell_z_min, cell_z_max)
+
+    # Create grid points.
+    grid_res = sim.resolution
+    Nx = int((cell_x_max - cell_x_min) * grid_res) + 1
+    Ny = int((cell_y_max - cell_y_min) * grid_res) + 1
+    Nz = int((cell_z_max - cell_z_min) * grid_res) + 1
+    xgrid = np.linspace(cell_x_min, cell_x_max, Nx)
+    ygrid = np.linspace(cell_y_min, cell_y_max, Ny)
+    zgrid = np.linspace(cell_z_min, cell_z_max, Nz)
     
-    # --- Draw geometry objects ---
-    for obj in geometry:
-        if isinstance(obj, mp.Block):
-            draw_block(ax, obj.center, obj.size, cell_bounds,
-                       color='lightgray', outline=outline, min_thickness=min_thickness, alpha=0.6)
-        
-        elif isinstance(obj, mp.Cylinder):
-            # For cylinders, clip radius and height if infinite.
-            r = (cell_x_max - cell_x_min) / 2 if obj.radius == mp.inf else obj.radius
-            if obj.height == mp.inf:
-                z_min, z_max = cell_z_min, cell_z_max
-            else:
-                z_min = obj.center.z - obj.height / 2
-                z_max = obj.center.z + obj.height / 2
-            theta = np.linspace(0, 2*np.pi, 30)
-            x = r * np.cos(theta) + obj.center.x
-            y = r * np.sin(theta) + obj.center.y
-            ax.plot_trisurf(x, y, np.full_like(x, z_min), alpha=0.6, color='lightgray',
-                              edgecolor='k' if outline else None)
-            ax.plot_trisurf(x, y, np.full_like(x, z_max), alpha=0.6, color='lightgray',
-                              edgecolor='k' if outline else None)
-        
-        elif isinstance(obj, mp.Sphere):
-            r = (cell_x_max - cell_x_min) / 2 if obj.radius == mp.inf else obj.radius
-            u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
-            x = r * np.cos(u) * np.sin(v) + obj.center.x
-            y = r * np.sin(u) * np.sin(v) + obj.center.y
-            z = r * np.cos(v) + obj.center.z
-            ax.plot_surface(x, y, z, alpha=0.6, color='lightgray')
-        
-        elif isinstance(obj, mp.Ellipsoid):
-            size_x = cell_size.x if obj.size.x == mp.inf else obj.size.x
-            size_y = cell_size.y if obj.size.y == mp.inf else obj.size.y
-            size_z = cell_size.z if obj.size.z == mp.inf else obj.size.z
-            u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
-            x = size_x * np.cos(u) * np.sin(v) + obj.center.x
-            y = size_y * np.sin(u) * np.sin(v) + obj.center.y
-            z = size_z * np.cos(v) + obj.center.z
-            ax.plot_surface(x, y, z, alpha=0.6, color='lightgray')
-        
-        elif isinstance(obj, mp.Prism):
-            if obj.height == mp.inf:
-                z_min, z_max = cell_z_min, cell_z_max
-            else:
-                z_min = obj.center.z - obj.height / 2
-                z_max = obj.center.z + obj.height / 2
-            vertices = np.array([[v.x, v.y, z_min] for v in obj.vertices])
-            top_vertices = np.array([[v.x, v.y, z_max] for v in obj.vertices])
-            faces = [ [vertices[i] for i in range(len(vertices))] ]
-            faces.append([top_vertices[i] for i in range(len(top_vertices))])
-            for i in range(len(vertices)):
-                faces.append([
-                    vertices[i],
-                    vertices[(i+1) % len(vertices)],
-                    top_vertices[(i+1) % len(vertices)],
-                    top_vertices[i]
-                ])
-            ax.add_collection3d(Poly3DCollection(faces, alpha=0.6,
-                                                 edgecolor='k' if outline else None,
-                                                 facecolor='lightgray'))
+    # Compute EPS data on the full grid.
+    eps_data = np.real(sim.get_epsilon_grid(xgrid, ygrid, zgrid, frequency))
+    try:
+        default_eps = np.round(np.abs(sim.default_material.epsilon_diag[0]), 2)
+    except Exception:
+        default_eps = 1.0
+
+    # We will plot voxels corresponding to the "cells" between grid points.
+    # Compute voxel centers as midpoints.
+    xcenters = (xgrid[:-1] + xgrid[1:]) / 2
+    ycenters = (ygrid[:-1] + ygrid[1:]) / 2
+    zcenters = (zgrid[:-1] + zgrid[1:]) / 2
+    Xc, Yc, Zc = np.meshgrid(xcenters, ycenters, zcenters, indexing='ij')
     
-    # --- Draw sources (if provided) ---
-    if sources is not None:
-        for src in sources:
-            # Allow sources to be provided as objects with attributes or as tuples (center, size)
-            if isinstance(src, tuple):
-                center, size = src
-            else:
-                center, size = src.center, src.size
-            draw_block(ax, center, size, cell_bounds,
-                       color='red', outline=outline, min_thickness=min_thickness, alpha=0.6)
+    # Trim the EPS data to match the voxel cells.
+    eps_trim = eps_data[:-1, :-1, :-1]
+    # Create a mask for EPS voxels (where epsilon deviates from background).
+    eps_mask = np.abs(eps_trim - default_eps) > threshold
     
-    # --- Draw detectors (if provided) ---
-    if detectors is not None:
-        for det in detectors:
-            if isinstance(det, tuple):
-                center, size = det
-            else:
-                center, size = det.center, det.size
-            draw_block(ax, center, size, cell_bounds,
-                       color='blue', outline=outline, min_thickness=min_thickness, alpha=0.6)
+    # Prepare composite mask and facecolors array.
+    composite_mask = np.copy(eps_mask)
+    norm = colors.Normalize(vmin=np.min(eps_data), vmax=np.max(eps_data))
+    colormap = matplotlib.colormaps["viridis"]
+    composite_facecolors = colormap(norm(eps_data))[:-1, :-1, :-1].copy()
     
-    # Set the display limits to the simulation cell boundaries.
+    # Initialize source and monitor masks.
+    source_mask = np.zeros_like(composite_mask, dtype=bool)
+    monitor_mask = np.zeros_like(composite_mask, dtype=bool)
+    
+    # Translation: add sim.geometry_center and mesh_midpoint.
+    translation = mp.Vector3(
+        sim.geometry_center.x + mesh_midpoint.x,
+        sim.geometry_center.y + mesh_midpoint.y,
+        sim.geometry_center.z + mesh_midpoint.z
+    )
+    
+    # Compute source mask with min_thickness based on grid resolution
+    min_thickness = 1.0 / sim.resolution  # Grid spacing
+    if sim.sources is not None:
+        for src in sim.sources:
+            src_center = mp.Vector3(
+                src.center.x + translation.x,
+                src.center.y + translation.y,
+                src.center.z + translation.z
+            )
+            mask_src = get_box_mask(src_center, src.size, Xc, Yc, Zc, min_thickness=min_thickness)
+            source_mask |= mask_src
+    # Compute monitor mask with min_thickness based on grid resolution
+    if hasattr(sim, 'dft_objects') and sim.dft_objects is not None:
+        for mon in sim.dft_objects:
+            for reg in mon.regions:
+                reg_center = mp.Vector3(
+                    reg.center.x + translation.x,
+                    reg.center.y + translation.y,
+                    reg.center.z + translation.z
+                )
+                mask_mon = get_box_mask(reg_center, reg.size, Xc, Yc, Zc, min_thickness=min_thickness)
+                monitor_mask |= mask_mon
+
+    # Combine masks.
+    composite_mask |= source_mask | monitor_mask
+
+    # Overwrite colors: where source_mask is True (and not EPS), set to red.
+    composite_facecolors[source_mask & (~eps_mask)] = np.array([1, 0, 0, 1])
+    # Where monitor_mask is True (and not EPS), set to blue.
+    composite_facecolors[monitor_mask & (~eps_mask)] = np.array([0, 0, 1, 1])
+    
+    # Plot the composite data.
+    fig = plt.figure(figsize=(8,6))
+    ax = fig.add_subplot(111, projection='3d')
+    X, Y, Z = np.meshgrid(xgrid, ygrid, zgrid, indexing='ij')
+    ax.voxels(X, Y, Z, composite_mask, facecolors=composite_facecolors, edgecolor=None, alpha=0.8)
     ax.set_xlabel("X (μm)")
     ax.set_ylabel("Y (μm)")
     ax.set_zlabel("Z (μm)")
     ax.set_xlim(cell_x_min, cell_x_max)
     ax.set_ylim(cell_y_min, cell_y_max)
     ax.set_zlim(cell_z_min, cell_z_max)
-    plt.show()
+    
+    if save_to_image:
+        plt.savefig(image_name, dpi=150)
+        plt.close(fig)
+    else:
+        plt.show()
+# -------------------------------
+# Dummy Classes for Testing (with Geometry)
+# -------------------------------
+class DummyMaterial:
+    def __init__(self, index):
+        self.index = index
+        self.epsilon_diag = [index**2]  # ε = (index)^2
+
+class DummySource:
+    def __init__(self, center, size):
+        self.center = center
+        self.size = size
+
+class DummyMonitorRegion:
+    def __init__(self, center, size, direction=0):
+        self.center = center
+        self.size = size
+        self.direction = direction  # not used here
+
+class DummyMonitor:
+    def __init__(self, regions):
+        self.regions = regions
+
+class DummySimulation:
+    def __init__(self, cell_size, resolution, geometry=None):
+        self.cell_size = cell_size
+        self.resolution = resolution
+        self.default_material = DummyMaterial(1.0)
+        self.sources = []       # list of DummySource objects
+        self.dft_objects = []   # list of DummyMonitor objects
+        self.geometry = geometry if geometry is not None else []
+        self.geometry_center = mp.Vector3(0, 0, 0)  # default translation
+    
+    def get_epsilon_grid(self, xgrid, ygrid, zgrid, frequency):
+        """
+        Compute an ε distribution from the geometry. Background is 1.0.
+        For each block in self.geometry, points inside the block are assigned ε = (material.index)^2.
+        """
+        X, Y, Z = np.meshgrid(xgrid, ygrid, zgrid, indexing='ij')
+        eps = np.ones_like(X)  # background permittivity
+        for block in self.geometry:
+            tx = block.size.x if block.size.x != 0 else 0.05
+            ty = block.size.y if block.size.y != 0 else 0.05
+            tz = block.size.z if block.size.z != 0 else 0.05
+            lower_x = block.center.x - tx/2
+            upper_x = block.center.x + tx/2
+            lower_y = block.center.y - ty/2
+            upper_y = block.center.y + ty/2
+            lower_z = block.center.z - tz/2
+            upper_z = block.center.z + tz/2
+            eps_val = block.material.index**2
+            mask = (X >= lower_x) & (X <= upper_x) & \
+                   (Y >= lower_y) & (Y <= upper_y) & \
+                   (Z >= lower_z) & (Z <= upper_z)
+            eps[mask] = eps_val
+        return eps
 
 # -------------------------------
-# Example usage:
+# Build the Simulation Cell in 3D
 # -------------------------------
 
-# Define a cell size (simulation cell is assumed centered at (0,0,0))
-cell_size = mp.Vector3(4, 4, 2)
+# "Extrude" a 2D design by assigning a finite z thickness.
+field_profile = True
+resolution = 10  # grid points per μm
 
-# Example geometry objects:
-geometry = [
-    # A Block with finite x and z but infinite y.
-    mp.Block(mp.Vector3(0.5, mp.inf, 0.4), center=mp.Vector3(0, 1, 0)),
-    mp.Cylinder(radius=0.3, height=0.8, center=mp.Vector3(1, 1, 0.4)),
-    mp.Sphere(radius=0.4, center=mp.Vector3(-1, -1, 0.4)),
-    mp.Ellipsoid(size=mp.Vector3(0.5, 0.3, 0.7), center=mp.Vector3(-1, 1, -1)),
-    mp.Prism(vertices=[mp.Vector3(-0.5, -0.5),
-                       mp.Vector3(0.5, -0.5),
-                       mp.Vector3(0, 0.5)],
-             height=0.7, center=mp.Vector3(1, -1, 0.35)),
-    mp.Block(mp.Vector3(1, 1, 1), center=mp.Vector3(1, 1, 0.4), material=mp.Medium(epsilon=12))
-]
+dpml = 1.0      # PML thickness
+dsub = 2.0      # substrate thickness
+dpad = 1.0      # flat-surface padding
+gp = 1.0        # grating periodicity
+gh = 0.5        # grating height
+gdc = 0.5       # grating duty cycle
+num_cells = 5   # number of grating unit cells
+dair = 10 if field_profile else dpad
 
-# Example source: using a source defined with a center and size.
-# Here, size components set to 0 (or mp.inf for an infinite extent) are handled appropriately.
-src = mp.Source(mp.GaussianSource(1/0.5, fwidth=0.2*(1/0.5), is_integrated=True),
-                component=mp.Ez,
-                center=mp.Vector3(-1.5, 0, 0),
-                size=mp.Vector3(0, 4, mp.inf))  # Zero thickness in x replaced with min_thickness; infinite z is clipped.
+wvl = 0.5       # center wavelength (μm)
+fcen = 1/wvl    # center frequency
 
-# Example detector (monitor) as a tuple (center, size).
-detector = (mp.Vector3(1.5, 0, 0), mp.Vector3(0, 4, mp.inf))  # Zero thickness in x replaced; infinite z is clipped.
+# Define a medium (glass) for the grating/substrate.
+glass = DummyMaterial(1.5)
 
-# Call the function with geometry, sources, detectors, and without outlines.
-plot_meep_geometry(geometry, cell_size, sources=[src], detectors=[detector], outline=True)
+# For a 3D simulation, assign a finite z thickness.
+sx = dpml + dsub + gh + dair + dpml
+sy = dpml + dpad + num_cells*gp + dpad + dpml
+sz = 4.0  # cell thickness in μm
+cell_size = mp.Vector3(sx, sy, sz)
+
+geometry = []
+
+# ---------------------------
+# Define Geometry: Substrate
+# ---------------------------
+# Offset the substrate in x (+2) to avoid overlapping with monitor voxels.
+substrate = mp.Block(material=glass,
+                     size=mp.Vector3(dpml+dsub, sy, sz),
+                     center=mp.Vector3(-0.5*sx + 0.5*(dpml+dsub) + 2, 0, 0))
+geometry.append(substrate)
+
+# ---------------------------
+# Define Geometry: Grating Blocks
+# ---------------------------
+for j in range(num_cells):
+    grating = mp.Block(material=glass,
+                       size=mp.Vector3(gh, gdc*gp, sz),
+                       center=mp.Vector3(-0.5*sx + dpml+dsub+0.5*gh + 2,
+                                         -0.5*sy + dpad + dpml + (j+0.5)*gp,
+                                         0))
+    geometry.append(grating)
+
+# ---------------------------
+# Define the Source
+# ---------------------------
+# Place the source just above the substrate.
+src_pt = mp.Vector3(-0.5*sx + dpml, 0, 0)
+source = DummySource(center=src_pt, size=mp.Vector3(0, sy, sz))
+
+# ---------------------------
+# Define the Monitor/Detector
+# ---------------------------
+# Place the detector in the air region above the grating.
+mon_pt = mp.Vector3(0.5*sx, 0, 0)
+monitor_region = DummyMonitorRegion(center=mon_pt, size=mp.Vector3(sx/2, sy-2*dpml, 0))
+monitor = DummyMonitor(regions=[monitor_region])
+
+# ---------------------------
+# Create the Dummy Simulation Object
+# ---------------------------
+sim = DummySimulation(cell_size, resolution, geometry=geometry)
+sim.sources.append(source)
+sim.dft_objects.append(monitor)
+
+# Optionally, set translation offsets:
+sim.geometry_center = mp.Vector3(0, 0, 0)
+mesh_midpoint = mp.Vector3(0, 0, 0)
+
+# ---------------------------
+# Visualize the Composite Data
+# ---------------------------
+plot3D_composite(sim, cell_size, mesh_midpoint=mesh_midpoint, save_to_image=False,
+                 image_name="sim_with_epsilon.png", frequency=fcen)
