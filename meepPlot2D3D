@@ -1,0 +1,276 @@
+import meep as mp
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # for 3D plotting
+import matplotlib
+from matplotlib import colors
+from scipy.ndimage import binary_erosion  # for shell extraction
+
+# -------------------------------
+# Helper: Compute Box Mask on a Grid
+# -------------------------------
+def get_box_mask(center, size, Xc, Yc, Zc, min_thickness=0.05):
+    """
+    Given a box defined by center and size (with min_thickness substitution),
+    returns a boolean mask (same shape as Xc, Yc, Zc) that is True inside the box.
+    """
+    tx = size.x if size.x != 0 else min_thickness
+    ty = size.y if size.y != 0 else min_thickness
+    tz = size.z if size.z != 0 else min_thickness
+    center_arr = np.array([center.x, center.y, center.z])
+    lower = center_arr - np.array([tx, ty, tz]) / 2
+    upper = center_arr + np.array([tx, ty, tz]) / 2
+    mask = ((Xc >= lower[0]) & (Xc <= upper[0]) &
+            (Yc >= lower[1]) & (Yc <= upper[1]) &
+            (Zc >= lower[2]) & (Zc <= upper[2]))
+    return mask
+
+# -------------------------------
+# Optimized Composite Plotting Function (supports 3D and 2D)
+# -------------------------------
+def plot3D_composite_optimized(sim, cell_size, mesh_midpoint=mp.Vector3(), 
+                               save_to_image=False, image_name="sim.png", 
+                               threshold=1e-3, plot_factor=2,
+                               sim_dim=None, invariant_axis=None, invariant_thickness=0.2):
+    """
+    Visualizes the simulation cell by creating a composite voxel plot.
+    
+    If sim_dim is not provided, it is set to 2 if any component of cell_size is zero, otherwise 3.
+    
+    For a 2D simulation, if invariant_axis is not provided, it is set to the axis whose cell_size is zero.
+    The invariant axis is then replaced by a thin slice of thickness `invariant_thickness` for visualization.
+    
+    The function downsamples the grid by plot_factor and extracts only the surface (shell) voxels.
+    """
+    # Automatically determine simulation dimensionality.
+    if sim_dim is None:
+        if cell_size.x == 0 or cell_size.y == 0 or cell_size.z == 0:
+            sim_dim = 2
+        else:
+            sim_dim = 3
+
+    # Automatically determine invariant axis for 2D simulations.
+    if sim_dim == 2 and invariant_axis is None:
+        if cell_size.x == 0:
+            invariant_axis = 'x'
+        elif cell_size.y == 0:
+            invariant_axis = 'y'
+        elif cell_size.z == 0:
+            invariant_axis = 'z'
+        else:
+            invariant_axis = 'z'  # default
+
+    # Define cell bounds.
+    cell_bounds = {
+        'x': (-cell_size.x/2, cell_size.x/2),
+        'y': (-cell_size.y/2, cell_size.y/2),
+        'z': (-cell_size.z/2, cell_size.z/2)
+    }
+    if sim_dim == 2:
+        cell_bounds[invariant_axis] = (-invariant_thickness/2, invariant_thickness/2)
+    
+    # Determine full-resolution number of points.
+    axes = ['x','y','z']
+    N_full = {}
+    for ax in axes:
+        N_full[ax] = int((cell_bounds[ax][1] - cell_bounds[ax][0]) * sim.resolution) + 1
+
+    # Downsample using np.linspace to preserve endpoints.
+    N_new = {}
+    grid = {}
+    for ax in axes:
+        if sim_dim == 2 and ax == invariant_axis:
+            N_new[ax] = 3  # minimal number for invariant axis
+        else:
+            N_new[ax] = (N_full[ax] - 1) // plot_factor + 1
+        grid[ax] = np.linspace(cell_bounds[ax][0], cell_bounds[ax][1], N_new[ax])
+    
+    xgrid = grid['x']
+    ygrid = grid['y']
+    zgrid = grid['z']
+    
+    # Get epsilon data.
+    if sim_dim == 2:
+        # For 2D simulations, supply a dummy z-grid.
+        eps_2d = np.real(sim.get_epsilon_grid(xgrid, ygrid, np.array([0])))
+        # Replicate the 2D data along z.
+        eps_data = np.repeat(eps_2d[:, :, np.newaxis], len(zgrid), axis=2)
+    else:
+        eps_data = np.real(sim.get_epsilon_grid(xgrid, ygrid, zgrid))
+    
+    try:
+        default_eps = np.round(np.abs(sim.default_material.epsilon_diag[0]), 2)
+    except Exception:
+        default_eps = 1.0
+
+    # Compute voxel centers (midpoints) on the downsampled grid.
+    xcenters = (xgrid[:-1] + xgrid[1:]) / 2
+    ycenters = (ygrid[:-1] + ygrid[1:]) / 2
+    zcenters = (zgrid[:-1] + zgrid[1:]) / 2
+    Xc, Yc, Zc = np.meshgrid(xcenters, ycenters, zcenters, indexing='ij')
+    
+    # Trim eps_data to match voxel cells.
+    eps_trim = eps_data[:-1, :-1, :-1]
+    eps_mask = np.abs(eps_trim - default_eps) > threshold
+    
+    # Composite mask and facecolors.
+    composite_mask = np.copy(eps_mask)
+    norm = colors.Normalize(vmin=np.min(eps_data), vmax=np.max(eps_data))
+    colormap = matplotlib.colormaps["viridis"]
+    composite_facecolors = colormap(norm(eps_data))[:-1, :-1, :-1].copy()
+    
+    # Initialize source and monitor masks.
+    source_mask = np.zeros_like(composite_mask, dtype=bool)
+    monitor_mask = np.zeros_like(composite_mask, dtype=bool)
+    
+    translation = mp.Vector3(
+        sim.geometry_center.x + mesh_midpoint.x,
+        sim.geometry_center.y + mesh_midpoint.y,
+        sim.geometry_center.z + mesh_midpoint.z
+    )
+    
+    min_thickness = 1.0 * plot_factor / sim.resolution
+    if sim.sources is not None:
+        for src in sim.sources:
+            src_center = mp.Vector3(src.center.x + translation.x,
+                                    src.center.y + translation.y,
+                                    src.center.z + translation.z)
+            mask_src = get_box_mask(src_center, src.size, Xc, Yc, Zc, min_thickness=min_thickness)
+            source_mask |= mask_src
+    if hasattr(sim, 'dft_objects') and sim.dft_objects is not None:
+        for mon in sim.dft_objects:
+            for reg in mon.regions:
+                reg_center = mp.Vector3(reg.center.x + translation.x,
+                                        reg.center.y + translation.y,
+                                        reg.center.z + translation.z)
+                mask_mon = get_box_mask(reg_center, reg.size, Xc, Yc, Zc, min_thickness=min_thickness)
+                monitor_mask |= mask_mon
+    composite_mask |= source_mask | monitor_mask
+    
+    composite_facecolors[source_mask & (~eps_mask)] = np.array([1, 0, 0, 1])
+    composite_facecolors[monitor_mask & (~eps_mask)] = np.array([0, 0, 1, 1])
+    
+    # Extract only the surface voxels.
+    surface_mask = composite_mask & ~binary_erosion(composite_mask)
+    facecolors_opt = np.zeros(composite_facecolors.shape)
+    facecolors_opt[..., 3] = 0
+    facecolors_opt[surface_mask] = composite_facecolors[surface_mask]
+    
+    # Plot using ax.voxels.
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(111, projection='3d')
+    X, Y, Z = np.meshgrid(xgrid, ygrid, zgrid, indexing='ij')
+    ax.voxels(X, Y, Z, surface_mask, facecolors=facecolors_opt,
+              edgecolor=None, alpha=0.8)
+    
+    ax.set_xlabel("X (μm)")
+    ax.set_ylabel("Y (μm)")
+    ax.set_zlabel("Z (μm)")
+    ax.set_xlim(cell_bounds['x'][0], cell_bounds['x'][1])
+    ax.set_ylim(cell_bounds['y'][0], cell_bounds['y'][1])
+    ax.set_zlim(cell_bounds['z'][0], cell_bounds['z'][1])
+    
+    if save_to_image:
+        plt.savefig(image_name, dpi=150)
+        plt.close(fig)
+    else:
+        plt.show()
+
+
+# -------------------------------
+# Build the Simulation Cell in 3D
+# -------------------------------
+
+# "Extrude" a 2D design by assigning a finite z thickness.
+field_profile = True
+resolution = 10  # grid points per μm
+
+dpml = 1.0      # PML thickness
+dsub = 2.0      # substrate thickness
+dpad = 1.0      # flat-surface padding
+gp = 1.0        # grating periodicity
+gh = 0.5        # grating height
+gdc = 0.5       # grating duty cycle
+num_cells = 5   # number of grating unit cells
+dair = 10 if field_profile else dpad
+
+wvl = 0.5       # center wavelength (μm)
+fcen = 1/wvl    # center frequency
+
+# Define a medium (glass) for the grating/substrate.
+glass = mp.Medium(index=1.5)
+
+# For a 3D simulation, assign a finite z thickness.
+sx = dpml + dsub + gh + dair + dpml
+sy = dpml + dpad + num_cells*gp + dpad + dpml
+sz = 4.0  # cell thickness in μm
+cell_size = mp.Vector3(sx, sy, sz)
+
+geometry = []
+
+# ---------------------------
+# Define Geometry: Substrate
+# ---------------------------
+# Offset the substrate in x (+2) to avoid overlapping with monitor voxels.
+substrate = mp.Block(material=glass,
+                     size=mp.Vector3(dpml+dsub, sy, sz),
+                     center=mp.Vector3(-0.5*sx + 0.5*(dpml+dsub) + 2, 0, 0))
+geometry.append(substrate)
+
+# ---------------------------
+# Define Geometry: Grating Blocks
+# ---------------------------
+for j in range(num_cells):
+    grating = mp.Block(material=glass,
+                       size=mp.Vector3(gh, gdc*gp, sz),
+                       center=mp.Vector3(-0.5*sx + dpml+dsub+0.5*gh + 2,
+                                         -0.5*sy + dpad + dpml + (j+0.5)*gp,
+                                         0))
+    geometry.append(grating)
+
+# ---------------------------
+# Define the Source
+# ---------------------------
+# Place the source just above the substrate.
+src_pt = mp.Vector3(-0.5*sx + dpml, 0, 0)
+# source = DummySource(center=src_pt, size=mp.Vector3(0, sy, sz))
+
+sources = [mp.Source(mp.ContinuousSource(frequency=0.15),
+                     component=mp.Ez,
+                     center=src_pt,
+                     size=mp.Vector3(0, sy, sz))]
+sim = mp.Simulation(resolution=5,
+                    cell_size=cell_size,
+                    sources=sources,
+                    geometry=geometry)
+
+
+
+# ---------------------------
+# Define the Monitor/Detector
+# ---------------------------
+fcen = 0.15  # pulse center frequency
+df = 0.1     # pulse width (in frequency)
+# # Place the detector in the air region above the grating.
+mon_pt = mp.Vector3(0.5*sx, 0, 0)
+monitor = mp.FluxRegion(center=mon_pt, size=mp.Vector3(sx/2, sy-2*dpml, 0))
+nfreq = 100  # number of frequencies at which to compute flux
+
+refl = sim.add_flux(fcen, df, nfreq, monitor)
+# monitor_region = DummyMonitorRegion(center=mon_pt, size=mp.Vector3(sx/2, sy-2*dpml, 0))
+# monitor = DummyMonitor(regions=[monitor_region])
+
+# ---------------------------
+# Create the Dummy Simulation Object
+# ---------------------------
+# sim = DummySimulation(cell_size, resolution, geometry=geometry)
+# sim.sources.append(source)
+# sim.dft_objects.append(monitor)
+
+# Optionally, set translation offsets:
+sim.geometry_center = mp.Vector3(0, 0, 0)
+mesh_midpoint = mp.Vector3(0, 0, 0)
+# Visualize the simulation.
+plot3D_composite_optimized(sim, cell_size, mesh_midpoint=mesh_midpoint, 
+                           save_to_image=False, image_name="grating_2d.png",
+                           plot_factor=2, sim_dim=None, invariant_axis=None, invariant_thickness=40)
