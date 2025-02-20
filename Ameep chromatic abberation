@@ -1,0 +1,104 @@
+import meep as mp
+import numpy as np
+import matplotlib.pyplot as plt
+
+# --- Simulation Parameters ---
+resolution = 50            # pixels per micron
+sx, sy = 16, 16            # simulation cell dimensions in microns
+cell = mp.Vector3(sx, sy, 0)
+dpml = 1.0                 # PML thickness (microns)
+
+# Define a simple source (a Gaussian pulse) that will cover the visible spectrum
+# We'll use the center frequency of one of the wavelengths (green) for the source.
+# (The monitors will pick out the discrete wavelengths we need.)
+wavelengths = [0.45, 0.55, 0.65]  # in microns (blue, green, red)
+freqs = [1.0 / wl for wl in wavelengths]
+
+# Define source and monitor positions
+source_center = mp.Vector3(-0.5 * sx + dpml + 1.0, 0, 0)  # left side of the cell
+monitor_center = mp.Vector3(0.5 * sx - dpml - 1.0, 0, 0)   # right side of the cell
+monitor_size = mp.Vector3(0, sy, 0)  # a vertical line spanning the cell height
+
+# Use a default material (glass) for now; our "metalens" will be simulated as a dummy block.
+glass = mp.Medium(index=1.5)
+
+# --- Define a single source ---
+source = mp.Source(
+    mp.GaussianSource(freq=freqs[1], fwidth=0.1*freqs[1]),  # using the green wavelength as center
+    component=mp.Ez,
+    center=source_center,
+    size=mp.Vector3(0, sy, 0)
+)
+
+# --- Reference Simulation (without metalens) ---
+sim_ref = mp.Simulation(cell_size=cell,
+                        boundary_layers=[mp.PML(dpml)],
+                        geometry=[],  # empty geometry
+                        sources=[source],
+                        resolution=resolution)
+
+# Add DFT monitors for each wavelength in the reference run.
+dft_refs = []
+for f in freqs:
+    # For df=0 and nfreq=1, the monitor will return data at exactly frequency f.
+    dft_obj = sim_ref.add_dft_fields(mp.Ez, fcen=f, df=0, nfreq=1,
+                                     center=monitor_center, size=monitor_size)
+    dft_refs.append(dft_obj)
+
+# Run the reference simulation.
+sim_ref.run(until_after_sources=50)
+
+# Extract the reference DFT arrays for each wavelength.
+ref_data = [sim_ref.get_dft_array(dft_obj, mp.Ez) for dft_obj in dft_refs]
+
+# --- Target Simulation (with metalens geometry) ---
+# Define a dummy metalens geometry—for example, a block in the center of the cell.
+geometry_metalens = [mp.Block(mp.Vector3(2, sy, mp.inf),
+                              center=mp.Vector3(0, 0, 0),
+                              material=glass)]
+
+sim_target = mp.Simulation(cell_size=cell,
+                           boundary_layers=[mp.PML(dpml)],
+                           geometry=geometry_metalens,
+                           sources=[source],
+                           resolution=resolution)
+
+# Add the same set of DFT monitors to the target simulation.
+dft_targets = []
+for f in freqs:
+    dft_obj = sim_target.add_dft_fields(mp.Ez, fcen=f, df=0, nfreq=1,
+                                        center=monitor_center, size=monitor_size)
+    dft_targets.append(dft_obj)
+
+# Run the target simulation.
+sim_target.run(until_after_sources=50)
+
+# Extract the target DFT arrays for each wavelength.
+target_data = [sim_target.get_dft_array(dft_obj, mp.Ez) for dft_obj in dft_targets]
+
+# --- Normalization: Subtract Reference Data from Target Data ---
+# (For one wavelength, simple subtraction worked; here we do it for all wavelengths.)
+normalized_data = [target_data[i] - ref_data[i] for i in range(len(freqs))]
+
+# --- Get Monitor Metadata to Compute Y Coordinates ---
+# We'll assume that the DFT monitor covers a vertical line of length 'sy'.
+# Use get_array_metadata() to retrieve the coordinate axis.
+metadata = sim_target.get_array_metadata(center=monitor_center, size=monitor_size)
+# metadata[1] is the array of y-values.
+y_vals = metadata[1]
+
+# --- Plot the Normalized PSF for Each Wavelength Using pcolormesh ---
+colors = ['blue', 'green', 'red']
+plt.figure(figsize=(10, 6))
+for i, wl in enumerate(wavelengths):
+    # Each normalized_data[i] is a 1D array along y.
+    # For visualization, plot |Ez|^2.
+    intensity = np.abs(normalized_data[i])**2
+    plt.plot(y_vals, intensity, color=colors[i], marker='o', label=f'{int(wl*1000)} nm')
+
+plt.xlabel("Y coordinate (µm)")
+plt.ylabel(r"Normalized |Ez|$^2$")
+plt.title("Chromatic PSF (Normalized) at Monitor (RGB wavelengths)")
+plt.legend()
+plt.grid(True)
+plt.show()
