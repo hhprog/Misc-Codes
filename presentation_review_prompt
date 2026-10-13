@@ -22,3 +22,25 @@ Past observations:
 **Principle:** Protect technical credibility without becoming defensive or assuming malicious intent.
 
 Keep recommendations short and practical.
+
+
+**Previous Review Feedback**
+
+- Concern raised regarding structural similarity to existing patents, despite differences in intended application.
+- Preliminary prior-art search identified similar optical design elements.
+
+**Potential Claim Refinement**
+
+Explore whether patentability can be established through specific design aspects, such as:
+
+1. **Geometrical configuration:** Particular arrangement, shape, spacing or dimensional relationships between optical elements.
+2. **Structural integration:** A specific combination or positioning of optical components that produces a distinct technical effect.
+3. **Design constraints:** A defined parameter relationship or operating condition associated with improved optical performance.
+
+**Proposed Next Step**
+
+Evaluate whether these design features provide a defensible distinction over prior art before committing to further FDTD simulations.
+
+**Question for Committee**
+
+Is there sufficient technical differentiation to pursue narrower claims, or should the filing direction be reconsidered?
